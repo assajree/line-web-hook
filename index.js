@@ -135,7 +135,7 @@ app.post('/webhook', async (req, res) => {
 });
 
 app.get('/', (req, res) => {
-    res.send('<h1>Server is running!</h1>');
+    res.sendFile(path.join(__dirname, 'public', 'pages', 'home.html'));
 });
 
 const basicAuth = (req, res, next) => {
