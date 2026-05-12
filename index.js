@@ -22,7 +22,6 @@ const CONFIG_FIELDS = [
     'LOG_FORMAT'
 ];
 const CONFIG_EDITABLE_FIELDS = CONFIG_FIELDS.filter((field) => field !== 'PORT');
-const CONFIG_SECRET_FIELDS = ['CHANNEL_SECRET', 'CHANNEL_ACCESS_TOKEN'];
 
 let configStore = loadConfigFromEnv();
 const Port = Number.parseInt(configStore.PORT || '5000', 10) || 5000;
@@ -35,11 +34,12 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 app.post('/webhook', async (req, res) => {
     try {
+        const { CHANNEL_SECRET: channelSecret, ADMIN_USER_ID: adminUserId, LOG_FORMAT: logFormat } = getConfig();
         const signature = req.headers['x-line-signature'];
         const body = req.body;
 
         // Verify Signature
-        if (!verifySignature(body, ChannelSecret, signature)) {
+        if (!verifySignature(body, channelSecret, signature)) {
             return res.status(401).send('Unauthorized');
         }
 
@@ -95,7 +95,7 @@ app.post('/webhook', async (req, res) => {
                     fs.mkdirSync(logDir, { recursive: true });
                 }
 
-                const fileExt = LogFormat.toLowerCase() === 'csv' ? 'csv' : 'txt';
+                const fileExt = (logFormat || 'csv').toLowerCase() === 'csv' ? 'csv' : 'txt';
                 const logFile = path.join(logDir, `${dayjs().format('YYYY-MM')}.${fileExt}`);
 
                 let logLine = '';
@@ -118,7 +118,7 @@ app.post('/webhook', async (req, res) => {
                 }
             } else if (sourceType === 'user') {
                 const userId = source.userId;
-                if (userId === AdminUserID) {
+                if (userId === adminUserId) {
                     const { action, groupName, month } = await parseCommand(userText);
                     if (action === 'summarize' && groupName && month) {
                         if (!summaryLogExists(groupName, month)) {
@@ -204,15 +204,14 @@ app.get('/api/config', (req, res) => {
     const config = getConfig();
     res.json({
         values: {
-            CHANNEL_SECRET: maskSecret(config.CHANNEL_SECRET),
-            CHANNEL_ACCESS_TOKEN: maskSecret(config.CHANNEL_ACCESS_TOKEN),
+            CHANNEL_SECRET: config.CHANNEL_SECRET || '',
+            CHANNEL_ACCESS_TOKEN: config.CHANNEL_ACCESS_TOKEN || '',
             ADMIN_USER_ID: config.ADMIN_USER_ID || '',
             OLLAMA_URL: config.OLLAMA_URL || '',
             OLLAMA_MODEL: config.OLLAMA_MODEL || '',
-            LOG_FORMAT: config.LOG_FORMAT || 'csv',
-            PORT: config.PORT || ''
+            LOG_FORMAT: config.LOG_FORMAT || 'csv'
         },
-        readonlyFields: ['PORT']
+        readonlyFields: []
     });
 });
 
@@ -326,7 +325,7 @@ function summaryLogExists(groupName, month) {
     return fs.existsSync(getLogFilePath(groupName, month));
 }
 
-async function summarizeLog(groupName, month, ollamaUrl = OllamaUrl) {
+async function summarizeLog(groupName, month, ollamaUrl) {
     const { OLLAMA_URL: defaultOllamaUrl } = getConfig();
     const chatText = fs.readFileSync(getLogFilePath(groupName, month), 'utf8');
     const prompt = buildSummaryPrompt(groupName, chatText);
@@ -426,7 +425,7 @@ async function replyText(replyToken, text) {
     }
 }
 
-async function askOllama(userText, systemPrompt, isJSONResponse, ollamaUrl = OllamaUrl) {
+async function askOllama(userText, systemPrompt, isJSONResponse, ollamaUrl) {
     const { OLLAMA_URL: defaultOllamaUrl, OLLAMA_MODEL: ollamaModel } = getConfig();
     const targetOllamaUrl = ollamaUrl || defaultOllamaUrl;
     console.log(`userText: ${userText}`);
@@ -561,11 +560,4 @@ function serializeEnvValue(value) {
         return `"${normalized.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
     }
     return normalized;
-}
-
-function maskSecret(value) {
-    const raw = String(value || '');
-    if (!raw) return '';
-    if (raw.length <= 6) return '******';
-    return `${raw.slice(0, 3)}***${raw.slice(-3)}`;
 }

@@ -9,15 +9,15 @@
 <body>
     <main>
         <h1>System Config</h1>
-        <p>ปรับค่าในไฟล์ .env ผ่านหน้าเว็บ (PORT เป็น read-only แก้ได้เฉพาะไฟล์และ restart server)</p>
+        <p>ปรับค่าในไฟล์ .env ผ่านหน้าเว็บ</p>
         <section class="panel">
             <form id="configForm">
                 <div class="grid">
                     <label>CHANNEL_SECRET
-                        <input id="channelSecret" name="CHANNEL_SECRET" type="password" autocomplete="off">
+                        <input id="channelSecret" name="CHANNEL_SECRET" type="text" autocomplete="off">
                     </label>
                     <label>CHANNEL_ACCESS_TOKEN
-                        <input id="channelAccessToken" name="CHANNEL_ACCESS_TOKEN" type="password" autocomplete="off">
+                        <input id="channelAccessToken" name="CHANNEL_ACCESS_TOKEN" type="text" autocomplete="off">
                     </label>
                     <label>ADMIN_USER_ID
                         <input id="adminUserId" name="ADMIN_USER_ID" type="text">
@@ -34,11 +34,7 @@
                             <option value="txt">txt</option>
                         </select>
                     </label>
-                    <label>PORT (read-only)
-                        <input id="port" name="PORT" type="text" disabled>
-                    </label>
                 </div>
-                <p class="hint">PORT แก้ไขผ่านหน้านี้ไม่ได้ หากต้องการเปลี่ยนให้แก้ไฟล์ .env โดยตรงและ restart server</p>
                 <div class="actions">
                     <button id="reloadButton" type="button" class="secondary">Reload</button>
                     <button id="saveButton" type="submit">Save Config</button>

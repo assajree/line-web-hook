@@ -9,8 +9,7 @@ const fields = {
     ADMIN_USER_ID: document.getElementById('adminUserId'),
     OLLAMA_URL: document.getElementById('ollamaUrl'),
     OLLAMA_MODEL: document.getElementById('ollamaModel'),
-    LOG_FORMAT: document.getElementById('logFormat'),
-    PORT: document.getElementById('port')
+    LOG_FORMAT: document.getElementById('logFormat')
 };
 
 reloadButton.addEventListener('click', loadConfig);
@@ -70,7 +69,6 @@ function fillForm(values) {
     fields.OLLAMA_URL.value = values.OLLAMA_URL || '';
     fields.OLLAMA_MODEL.value = values.OLLAMA_MODEL || '';
     fields.LOG_FORMAT.value = values.LOG_FORMAT || 'csv';
-    fields.PORT.value = values.PORT || '';
 }
 
 function setBusy(isBusy) {
