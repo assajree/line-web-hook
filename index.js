@@ -17,13 +17,11 @@ const CONFIG_FIELDS = [
     'ADMIN_USER_ID',
     'OLLAMA_URL',
     'OLLAMA_MODEL',
-    'PORT',
     'LOG_FORMAT'
 ];
-const CONFIG_EDITABLE_FIELDS = CONFIG_FIELDS.filter((field) => field !== 'PORT');
 
 let configStore = loadConfigFromFile();
-const Port = Number.parseInt(configStore.PORT || '5000', 10) || 5000;
+const Port = getPortFromArgs(process.argv);
 // =========================================
 
 // Middleware to parse raw body for signature verification
@@ -221,12 +219,8 @@ app.post('/api/config', (req, res) => {
             return res.status(400).json({ error: 'Invalid payload' });
         }
 
-        if (Object.prototype.hasOwnProperty.call(req.body, 'PORT')) {
-            return res.status(400).json({ error: 'PORT is read-only and cannot be changed from web config' });
-        }
-
         const updates = {};
-        for (const field of CONFIG_EDITABLE_FIELDS) {
+        for (const field of CONFIG_FIELDS) {
             if (!Object.prototype.hasOwnProperty.call(req.body, field)) continue;
             updates[field] = String(req.body[field] ?? '').trim();
         }
@@ -560,13 +554,36 @@ function getDefaultConfig() {
         ADMIN_USER_ID: '',
         OLLAMA_URL: 'http://localhost:11434/api/chat',
         OLLAMA_MODEL: 'gemma3:27b',
-        PORT: process.env.PORT || '5000',
         LOG_FORMAT: 'csv'
     };
 }
 
 function getConfig() {
     return configStore;
+}
+
+function getPortFromArgs(argv) {
+    const defaultPort = 5000;
+
+    for (let i = 2; i < argv.length; i += 1) {
+        const arg = argv[i];
+        if (arg === '--port') {
+            return parsePort(argv[i + 1], defaultPort);
+        }
+        if (arg.startsWith('--port=')) {
+            return parsePort(arg.slice('--port='.length), defaultPort);
+        }
+    }
+
+    return defaultPort;
+}
+
+function parsePort(value, fallback) {
+    const port = Number.parseInt(value, 10);
+    if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+        return fallback;
+    }
+    return port;
 }
 
 function normalizeLogFormat(value) {
