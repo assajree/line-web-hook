@@ -17,6 +17,7 @@ const AdminUserID = process.env.ADMIN_USER_ID;
 const OllamaUrl = process.env.OLLAMA_URL;
 const OllamaModel = process.env.OLLAMA_MODEL;
 const Port = process.env.PORT || 5000;
+const LogFormat = process.env.LOG_FORMAT || 'csv'; // 'txt' or 'csv'
 // =========================================
 
 // Middleware to parse raw body for signature verification
@@ -41,7 +42,7 @@ app.post('/webhook', async (req, res) => {
 
         for (const ev of events) {
             if (ev.type !== 'message') continue;
-            
+
             const message = ev.message;
             if (message.type !== 'text') continue;
 
@@ -51,8 +52,6 @@ app.post('/webhook', async (req, res) => {
 
             const dateTime = dayjs(timestamp);
             const timeText = dateTime.format('YYYY-MM-DD HH:mm:ss');
-
-            console.log(`userText: ${userText}`);
 
             const source = ev.source;
             const sourceType = source.type;
@@ -81,13 +80,25 @@ app.post('/webhook', async (req, res) => {
                 // ===== LOG =====
                 const safeGroupName = sanitizeFolderName(groupName);
                 const logDir = path.join(__dirname, 'Logs', safeGroupName);
-                
+
                 if (!fs.existsSync(logDir)) {
                     fs.mkdirSync(logDir, { recursive: true });
                 }
 
-                const logFile = path.join(logDir, `${dayjs().format('YYYY-MM')}.txt`);
-                const logLine = `[Time : ${timeText}] [Group : ${groupName}] [Name : ${displayName}] : ${userText}`;
+                const fileExt = LogFormat.toLowerCase() === 'csv' ? 'csv' : 'txt';
+                const logFile = path.join(logDir, `${dayjs().format('YYYY-MM')}.${fileExt}`);
+
+                let logLine = '';
+                if (fileExt === 'csv') {
+                    const escapeCsv = (str) => `"${String(str).replace(/"/g, '""')}"`;
+                    logLine = `${escapeCsv(timeText)},${escapeCsv(groupName)},${escapeCsv(displayName)},${escapeCsv(userText)}`;
+                    if (!fs.existsSync(logFile)) {
+                        fs.writeFileSync(logFile, '"Time","Group","Name","Message"\n', 'utf8');
+                    }
+                } else {
+                    logLine = `[Time : ${timeText}] [Group : ${groupName}] [Name : ${displayName}] : ${userText}`;
+                }
+
                 console.log(logLine);
 
                 try {
@@ -102,7 +113,8 @@ app.post('/webhook', async (req, res) => {
 
                     if (action === 'summarize' && groupName && month) {
                         const safeGroupName = sanitizeFolderName(groupName);
-                        const logPath = path.join(__dirname, 'Logs', safeGroupName, `${month}.txt`);
+                        const fileExt = LogFormat.toLowerCase() === 'csv' ? 'csv' : 'txt';
+                        const logPath = path.join(__dirname, 'Logs', safeGroupName, `${month}.${fileExt}`);
 
                         if (!fs.existsSync(logPath)) {
                             await replyText(replyToken, `ไม่พบข้อมูลของกลุ่ม ${groupName} เดือน ${month}`);
@@ -152,9 +164,23 @@ app.get('/', (req, res) => {
     res.send('<h1>Server is running!</h1>');
 });
 
+const basicAuth = (req, res, next) => {
+    const b64auth = (req.headers.authorization || '').split(' ')[1] || '';
+    const [login, password] = Buffer.from(b64auth, 'base64').toString().split(':');
+
+    if (login === 'system' && password === 'csi@') {
+        return next();
+    }
+
+    res.set('WWW-Authenticate', 'Basic realm="401"');
+    res.status(401).send('Authentication required.');
+};
+
+app.use('/logs', basicAuth);
+
 app.get('/logs', (req, res) => {
     const logPath = path.join(__dirname, 'Logs');
-    
+
     if (!fs.existsSync(logPath)) {
         return res.send('<h1>No logs found.</h1>');
     }
@@ -183,9 +209,9 @@ app.get('/logs', (req, res) => {
     for (const groupName of groups) {
         htmlBuilder += `<div class="group-box">`;
         htmlBuilder += `<h2>Group: ${groupName}</h2>`;
-        
+
         const groupDir = path.join(logPath, groupName);
-        const files = fs.readdirSync(groupDir).filter(f => f.endsWith('.txt'));
+        const files = fs.readdirSync(groupDir).filter(f => f.endsWith('.txt') || f.endsWith('.csv'));
 
         if (files.length === 0) {
             htmlBuilder += `<p>No log files for this group.</p>`;
@@ -299,7 +325,7 @@ async function askOllama(userText, systemPrompt, isJSONResponse) {
 
         const res = await axios.post(OllamaUrl, payload);
         console.log(`Ollama raw response received`);
-        
+
         return res.data?.message?.content || "ขออภัยค่ะ ระบบไม่สามารถตอบได้ในขณะนี้";
     } catch (ex) {
         console.log('OLLAMA ERROR: ', ex.message);
