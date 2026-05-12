@@ -23,6 +23,7 @@ const LogFormat = process.env.LOG_FORMAT || 'csv'; // 'txt' or 'csv'
 // Middleware to parse raw body for signature verification
 app.use('/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public')));
 
 app.post('/webhook', async (req, res) => {
     try {
@@ -154,8 +155,7 @@ app.use('/summary', basicAuth);
 app.use('/api/summary', basicAuth);
 
 app.get('/summary', (req, res) => {
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.send(getSummaryPageHtml());
+    res.sendFile(path.join(__dirname, 'public', 'pages', 'summary.html'));
 });
 
 app.get('/api/summary/options', (req, res) => {
@@ -183,56 +183,11 @@ app.post('/api/summary', async (req, res) => {
 });
 
 app.get('/logs', (req, res) => {
-    const logPath = path.join(__dirname, 'Logs');
+    res.sendFile(path.join(__dirname, 'public', 'pages', 'logs.html'));
+});
 
-    if (!fs.existsSync(logPath)) {
-        return res.send('<h1>No logs found.</h1>');
-    }
-
-    let htmlBuilder = `
-        <!DOCTYPE html><html><head><meta charset="utf-8"><title>Log Viewer</title>
-        <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; color: #333; margin: 40px; }
-        h1 { color: #2c3e50; }
-        .group-box { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; }
-        h2 { color: #2980b9; margin-top: 0; }
-        ul { list-style-type: none; padding: 0; }
-        li { margin: 10px 0; display: flex; justify-content: space-between; align-items: center; max-width: 400px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
-        a { text-decoration: none; color: #fff; background-color: #3498db; padding: 8px 12px; border-radius: 4px; font-weight: bold; transition: background-color 0.3s; font-size: 14px; }
-        a:hover { background-color: #2980b9; }
-        </style></head><body>
-        <h1>Download Logs</h1>
-    `;
-
-    const groups = fs.readdirSync(logPath, { withFileTypes: true }).filter(dirent => dirent.isDirectory()).map(dirent => dirent.name);
-
-    if (groups.length === 0) {
-        htmlBuilder += '<p>No groups found.</p>';
-    }
-
-    for (const groupName of groups) {
-        htmlBuilder += `<div class="group-box">`;
-        htmlBuilder += `<h2>Group: ${groupName}</h2>`;
-
-        const groupDir = path.join(logPath, groupName);
-        const files = fs.readdirSync(groupDir).filter(f => f.endsWith('.txt') || f.endsWith('.csv'));
-
-        if (files.length === 0) {
-            htmlBuilder += `<p>No log files for this group.</p>`;
-        } else {
-            htmlBuilder += `<ul>`;
-            for (const fileName of files) {
-                const downloadUrl = `/logs/download/${encodeURIComponent(groupName)}/${encodeURIComponent(fileName)}`;
-                htmlBuilder += `<li><span>${fileName}</span> <a href="${downloadUrl}" target="_blank">Download</a></li>`;
-            }
-            htmlBuilder += `</ul>`;
-        }
-        htmlBuilder += `</div>`;
-    }
-
-    htmlBuilder += `</body></html>`;
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.send(htmlBuilder);
+app.get('/api/logs/options', (req, res) => {
+    res.json(getLogOptions());
 });
 
 app.get('/logs/download/:groupName/:fileName', (req, res) => {
@@ -365,131 +320,25 @@ function getSummaryOptions() {
     return { groups };
 }
 
-function getSummaryPageHtml() {
-    const defaultOllamaUrl = escapeHtml(OllamaUrl || 'http://localhost:11434/api/chat');
-    return `
-<!DOCTYPE html>
-<html lang="th">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Summary Data</title>
-    <style>
-        :root { --bg: #eef3f1; --panel: #ffffff; --text: #23312d; --muted: #64746f; --line: #d7e0dd; --accent: #1f7a66; --accent-dark: #145848; --danger: #a33b2f; }
-        * { box-sizing: border-box; }
-        body { margin: 0; min-height: 100vh; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: var(--text); background: linear-gradient(135deg, #e9f0ed 0%, #f7faf8 45%, #dfe9e5 100%); }
-        main { width: min(1120px, calc(100% - 32px)); margin: 0 auto; padding: 40px 0; }
-        h1 { margin: 0 0 8px; font-size: 34px; }
-        p { margin: 0 0 24px; color: var(--muted); }
-        .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 18px 50px rgba(35,49,45,.10); padding: 24px; }
-        .grid { display: grid; grid-template-columns: 1.4fr 1fr 1fr auto; gap: 14px; align-items: end; }
-        label { display: grid; gap: 7px; font-size: 13px; font-weight: 700; color: var(--muted); }
-        input, select, textarea { width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 11px 12px; font: inherit; color: var(--text); background: #fbfdfc; }
-        textarea { min-height: 420px; margin-top: 20px; resize: vertical; line-height: 1.55; white-space: pre-wrap; }
-        button { border: 0; border-radius: 6px; background: var(--accent); color: white; font-weight: 800; padding: 12px 22px; cursor: pointer; min-height: 44px; }
-        button:hover { background: var(--accent-dark); }
-        button:disabled { opacity: .65; cursor: wait; }
-        .status { min-height: 22px; margin-top: 14px; color: var(--muted); font-size: 14px; }
-        .status.error { color: var(--danger); }
-        @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } main { padding: 24px 0; } h1 { font-size: 28px; } }
-    </style>
-</head>
-<body>
-    <main>
-        <h1>Summary Data</h1>
-        <p>เลือก group และเดือนจาก log ที่มีอยู่ แล้วส่งข้อมูลไปยัง Ollama เพื่อสรุปผล</p>
-        <section class="panel">
-            <div class="grid">
-                <label>OLLAMA_URL
-                    <input id="ollamaUrl" type="url" value="${defaultOllamaUrl}" placeholder="http://localhost:11434/api/chat">
-                </label>
-                <label>Group
-                    <select id="groupSelect"></select>
-                </label>
-                <label>Month
-                    <select id="monthSelect"></select>
-                </label>
-                <button id="summaryButton" type="button">Summary</button>
-            </div>
-            <div id="status" class="status"></div>
-            <textarea id="summaryOutput" placeholder="ผลลัพธ์จาก Ollama จะแสดงที่นี่"></textarea>
-        </section>
-    </main>
-    <script>
-        const urlInput = document.getElementById('ollamaUrl');
-        const groupSelect = document.getElementById('groupSelect');
-        const monthSelect = document.getElementById('monthSelect');
-        const summaryButton = document.getElementById('summaryButton');
-        const summaryOutput = document.getElementById('summaryOutput');
-        const statusText = document.getElementById('status');
-        let groups = [];
+function getLogOptions() {
+    const logPath = path.join(__dirname, 'Logs');
+    if (!fs.existsSync(logPath)) {
+        return { groups: [] };
+    }
 
-        urlInput.value = localStorage.getItem('OLLAMA_URL') || urlInput.value;
-        urlInput.addEventListener('input', () => localStorage.setItem('OLLAMA_URL', urlInput.value.trim()));
-        groupSelect.addEventListener('change', renderMonths);
-        summaryButton.addEventListener('click', summarize);
+    const groups = fs.readdirSync(logPath, { withFileTypes: true })
+        .filter(dirent => dirent.isDirectory())
+        .map(dirent => {
+            const groupDir = path.join(logPath, dirent.name);
+            const files = fs.readdirSync(groupDir)
+                .filter(fileName => fileName.endsWith('.txt') || fileName.endsWith('.csv'))
+                .sort()
+                .reverse();
 
-        loadOptions();
+            return { name: dirent.name, files };
+        });
 
-        async function loadOptions() {
-            try {
-                const res = await fetch('/api/summary/options');
-                const data = await res.json();
-                groups = data.groups || [];
-                groupSelect.innerHTML = groups.map(group => '<option value="' + escapeAttr(group.name) + '">' + escapeHtml(group.name) + '</option>').join('');
-                renderMonths();
-                statusText.textContent = groups.length ? '' : 'ยังไม่มี log สำหรับสรุป';
-            } catch (err) {
-                setError('โหลดรายการ group ไม่สำเร็จ');
-            }
-        }
-
-        function renderMonths() {
-            const selected = groups.find(group => group.name === groupSelect.value);
-            const months = selected ? selected.months : [];
-            monthSelect.innerHTML = months.map(month => '<option value="' + escapeAttr(month) + '">' + escapeHtml(month) + '</option>').join('');
-        }
-
-        async function summarize() {
-            const ollamaUrl = urlInput.value.trim();
-            localStorage.setItem('OLLAMA_URL', ollamaUrl);
-            summaryButton.disabled = true;
-            summaryOutput.value = '';
-            statusText.className = 'status';
-            statusText.textContent = 'กำลังสรุปข้อมูล...';
-
-            try {
-                const res = await fetch('/api/summary', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ollamaUrl, groupName: groupSelect.value, month: monthSelect.value })
-                });
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.error || 'Summary failed');
-                summaryOutput.value = data.summary || '';
-                statusText.textContent = 'สรุปข้อมูลเสร็จแล้ว';
-            } catch (err) {
-                setError(err.message || 'สรุปข้อมูลไม่สำเร็จ');
-            } finally {
-                summaryButton.disabled = false;
-            }
-        }
-
-        function setError(message) {
-            statusText.className = 'status error';
-            statusText.textContent = message;
-        }
-
-        function escapeHtml(value) {
-            return String(value).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
-        }
-
-        function escapeAttr(value) {
-            return escapeHtml(value);
-        }
-    </script>
-</body>
-</html>`;
+    return { groups };
 }
 
 function escapeHtml(value) {

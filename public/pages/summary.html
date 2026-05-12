@@ -1,0 +1,32 @@
+﻿<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Summary Data</title>
+    <link rel="stylesheet" href="/css/summary.css">
+</head>
+<body>
+    <main>
+        <h1>Summary Data</h1>
+        <p>เลือก group และเดือนจาก log ที่มีอยู่ แล้วส่งข้อมูลไปยัง Ollama เพื่อสรุปผล</p>
+        <section class="panel">
+            <div class="grid">
+                <label>OLLAMA_URL
+                    <input id="ollamaUrl" type="url" value="http://localhost:11434/api/chat" placeholder="http://localhost:11434/api/chat">
+                </label>
+                <label>Group
+                    <select id="groupSelect"></select>
+                </label>
+                <label>Month
+                    <select id="monthSelect"></select>
+                </label>
+                <button id="summaryButton" type="button">Summary</button>
+            </div>
+            <div id="status" class="status"></div>
+            <textarea id="summaryOutput" placeholder="ผลลัพธ์จาก Ollama จะแสดงที่นี่"></textarea>
+        </section>
+    </main>
+    <script src="/js/summary.js"></script>
+</body>
+</html>
