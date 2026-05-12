@@ -93,7 +93,7 @@ app.post('/webhook', async (req, res) => {
                     const escapeCsv = (str) => `"${String(str).replace(/"/g, '""')}"`;
                     logLine = `${escapeCsv(timeText)},${escapeCsv(groupName)},${escapeCsv(displayName)},${escapeCsv(userText)}`;
                     if (!fs.existsSync(logFile)) {
-                        fs.writeFileSync(logFile, '"Time","Group","Name","Message"\n', 'utf8');
+                        fs.writeFileSync(logFile, '\ufeff"Time","Group","Name","Message"\n', 'utf8');
                     }
                 } else {
                     logLine = `[Time : ${timeText}] [Group : ${groupName}] [Name : ${displayName}] : ${userText}`;
