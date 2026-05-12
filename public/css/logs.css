@@ -39,7 +39,18 @@ span {
     color: var(--text);
 }
 
+.file-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
 #content a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     text-decoration: none;
     border: 0;
     border-radius: 6px;
@@ -61,5 +72,9 @@ span {
     li {
         align-items: flex-start;
         flex-direction: column;
+    }
+
+    .file-actions {
+        justify-content: flex-start;
     }
 }

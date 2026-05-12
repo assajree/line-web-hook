@@ -243,11 +243,20 @@ app.get('/api/logs/options', (req, res) => {
     res.json(getLogOptions());
 });
 
-app.get('/logs/download/:groupName/:fileName', (req, res) => {
-    const groupName = req.params.groupName.replace(/\.\./g, "").replace(/\//g, "").replace(/\\/g, "");
-    const fileName = req.params.fileName.replace(/\.\./g, "").replace(/\//g, "").replace(/\\/g, "");
+app.get('/logs/view/:groupName/:fileName', (req, res) => {
+    const filePath = getRequestedLogFilePath(req.params.groupName, req.params.fileName);
 
-    const filePath = path.join(__dirname, 'Logs', groupName, fileName);
+    if (!fs.existsSync(filePath)) {
+        return res.status(404).send('Log file not found.');
+    }
+
+    res.type('text/plain; charset=utf-8');
+    res.send(fs.readFileSync(filePath, 'utf8'));
+});
+
+app.get('/logs/download/:groupName/:fileName', (req, res) => {
+    const filePath = getRequestedLogFilePath(req.params.groupName, req.params.fileName);
+    const fileName = path.basename(filePath);
 
     if (!fs.existsSync(filePath)) {
         return res.status(404).send('Log file not found.');
@@ -319,6 +328,21 @@ function getLogFilePath(groupName, month) {
     }
 
     return path.join(groupDir, `${month}.${getPreferredLogExtensions()[0]}`);
+}
+
+function sanitizeRoutePathPart(value) {
+    return String(value || '').replace(/\.\./g, "").replace(/\//g, "").replace(/\\/g, "");
+}
+
+function getRequestedLogFilePath(groupName, fileName) {
+    const safeGroupName = sanitizeRoutePathPart(groupName);
+    const safeFileName = sanitizeRoutePathPart(fileName);
+
+    if (!safeFileName.endsWith('.txt') && !safeFileName.endsWith('.csv')) {
+        return path.join(__dirname, 'Logs', safeGroupName, '__invalid_log_file__');
+    }
+
+    return path.join(__dirname, 'Logs', safeGroupName, safeFileName);
 }
 
 function summaryLogExists(groupName, month) {

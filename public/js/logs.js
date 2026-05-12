@@ -22,8 +22,9 @@ function renderLogs(groups) {
         const files = group.files || [];
         const body = files.length
             ? '<ul>' + files.map(fileName => {
+                const viewUrl = '/logs/view/' + encodeURIComponent(group.name) + '/' + encodeURIComponent(fileName);
                 const downloadUrl = '/logs/download/' + encodeURIComponent(group.name) + '/' + encodeURIComponent(fileName);
-                return '<li><span>' + escapeHtml(fileName) + '</span><a href="' + downloadUrl + '" target="_blank" rel="noopener">Download</a></li>';
+                return '<li><span>' + escapeHtml(fileName) + '</span><div class="file-actions"><a href="' + viewUrl + '" target="_blank" rel="noopener">View</a><a href="' + downloadUrl + '" target="_blank" rel="noopener">Download</a></div></li>';
               }).join('') + '</ul>'
             : '<p>No log files for this group.</p>';
 
