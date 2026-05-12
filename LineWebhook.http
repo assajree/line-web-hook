@@ -1,0 +1,6 @@
+@LineWebhook_HostAddress = http://localhost:5296
+
+GET {{LineWebhook_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
