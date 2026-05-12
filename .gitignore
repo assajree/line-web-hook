@@ -1,2 +1,4 @@
 /Logs
 /node_modules
+.env
+config.local.json

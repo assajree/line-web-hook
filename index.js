@@ -1,4 +1,3 @@
-require('dotenv').config();
 const express = require('express');
 const crypto = require('crypto');
 const axios = require('axios');
@@ -11,7 +10,7 @@ const app = express();
 const cache = new NodeCache();
 
 // ================= CONFIG =================
-const ENV_PATH = path.join(__dirname, '.env');
+const CONFIG_PATH = path.join(__dirname, 'config.local.json');
 const CONFIG_FIELDS = [
     'CHANNEL_SECRET',
     'CHANNEL_ACCESS_TOKEN',
@@ -23,7 +22,7 @@ const CONFIG_FIELDS = [
 ];
 const CONFIG_EDITABLE_FIELDS = CONFIG_FIELDS.filter((field) => field !== 'PORT');
 
-let configStore = loadConfigFromEnv();
+let configStore = loadConfigFromFile();
 const Port = Number.parseInt(configStore.PORT || '5000', 10) || 5000;
 // =========================================
 
@@ -508,15 +507,36 @@ async function parseCommand(text) {
     }
 }
 
-function loadConfigFromEnv() {
+function loadConfigFromFile() {
+    const defaults = getDefaultConfig();
+    if (!fs.existsSync(CONFIG_PATH)) {
+        return defaults;
+    }
+
+    try {
+        const savedConfig = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+        const config = { ...defaults };
+        for (const field of CONFIG_FIELDS) {
+            if (!Object.prototype.hasOwnProperty.call(savedConfig, field)) continue;
+            config[field] = String(savedConfig[field] ?? '');
+        }
+        config.LOG_FORMAT = normalizeLogFormat(config.LOG_FORMAT);
+        return config;
+    } catch (ex) {
+        console.log('CONFIG READ ERROR: ' + ex.message);
+        return defaults;
+    }
+}
+
+function getDefaultConfig() {
     return {
-        CHANNEL_SECRET: process.env.CHANNEL_SECRET || '',
-        CHANNEL_ACCESS_TOKEN: process.env.CHANNEL_ACCESS_TOKEN || '',
-        ADMIN_USER_ID: process.env.ADMIN_USER_ID || '',
-        OLLAMA_URL: process.env.OLLAMA_URL || 'http://localhost:11434/api/chat',
-        OLLAMA_MODEL: process.env.OLLAMA_MODEL || 'gemma3:27b',
+        CHANNEL_SECRET: '',
+        CHANNEL_ACCESS_TOKEN: '',
+        ADMIN_USER_ID: '',
+        OLLAMA_URL: 'http://localhost:11434/api/chat',
+        OLLAMA_MODEL: 'gemma3:27b',
         PORT: process.env.PORT || '5000',
-        LOG_FORMAT: normalizeLogFormat(process.env.LOG_FORMAT || 'csv')
+        LOG_FORMAT: 'csv'
     };
 }
 
@@ -541,23 +561,14 @@ function validateConfigUpdates(updates) {
 function updateConfig(updates) {
     const nextConfig = { ...configStore, ...updates };
     nextConfig.LOG_FORMAT = normalizeLogFormat(nextConfig.LOG_FORMAT);
-    writeEnvFile(nextConfig);
+    writeConfigFile(nextConfig);
     configStore = nextConfig;
+}
+
+function writeConfigFile(config) {
+    const serializableConfig = {};
     for (const field of CONFIG_FIELDS) {
-        process.env[field] = nextConfig[field] || '';
+        serializableConfig[field] = config[field] || '';
     }
-}
-
-function writeEnvFile(config) {
-    const lines = CONFIG_FIELDS.map((field) => `${field}=${serializeEnvValue(config[field] || '')}`);
-    fs.writeFileSync(ENV_PATH, lines.join('\n') + '\n', 'utf8');
-}
-
-function serializeEnvValue(value) {
-    const normalized = String(value).replace(/\r?\n/g, ' ');
-    if (normalized === '') return '""';
-    if (/[\s#"'`]/.test(normalized)) {
-        return `"${normalized.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
-    }
-    return normalized;
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(serializableConfig, null, 2) + '\n', 'utf8');
 }
