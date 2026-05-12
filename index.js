@@ -11,13 +11,21 @@ const app = express();
 const cache = new NodeCache();
 
 // ================= CONFIG =================
-const ChannelSecret = process.env.CHANNEL_SECRET;
-const ChannelAccessToken = process.env.CHANNEL_ACCESS_TOKEN;
-const AdminUserID = process.env.ADMIN_USER_ID;
-const OllamaUrl = process.env.OLLAMA_URL;
-const OllamaModel = process.env.OLLAMA_MODEL;
-const Port = process.env.PORT || 5000;
-const LogFormat = process.env.LOG_FORMAT || 'csv'; // 'txt' or 'csv'
+const ENV_PATH = path.join(__dirname, '.env');
+const CONFIG_FIELDS = [
+    'CHANNEL_SECRET',
+    'CHANNEL_ACCESS_TOKEN',
+    'ADMIN_USER_ID',
+    'OLLAMA_URL',
+    'OLLAMA_MODEL',
+    'PORT',
+    'LOG_FORMAT'
+];
+const CONFIG_EDITABLE_FIELDS = CONFIG_FIELDS.filter((field) => field !== 'PORT');
+const CONFIG_SECRET_FIELDS = ['CHANNEL_SECRET', 'CHANNEL_ACCESS_TOKEN'];
+
+let configStore = loadConfigFromEnv();
+const Port = Number.parseInt(configStore.PORT || '5000', 10) || 5000;
 // =========================================
 
 // Middleware to parse raw body for signature verification
@@ -153,6 +161,8 @@ const basicAuth = (req, res, next) => {
 app.use('/logs', basicAuth);
 app.use('/summary', basicAuth);
 app.use('/api/summary', basicAuth);
+app.use('/config', basicAuth);
+app.use('/api/config', basicAuth);
 
 app.get('/summary', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'pages', 'summary.html'));
@@ -186,6 +196,50 @@ app.get('/logs', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'pages', 'logs.html'));
 });
 
+app.get('/config', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'pages', 'config.html'));
+});
+
+app.get('/api/config', (req, res) => {
+    const config = getConfig();
+    res.json({
+        values: {
+            CHANNEL_SECRET: maskSecret(config.CHANNEL_SECRET),
+            CHANNEL_ACCESS_TOKEN: maskSecret(config.CHANNEL_ACCESS_TOKEN),
+            ADMIN_USER_ID: config.ADMIN_USER_ID || '',
+            OLLAMA_URL: config.OLLAMA_URL || '',
+            OLLAMA_MODEL: config.OLLAMA_MODEL || '',
+            LOG_FORMAT: config.LOG_FORMAT || 'csv',
+            PORT: config.PORT || ''
+        },
+        readonlyFields: ['PORT']
+    });
+});
+
+app.post('/api/config', (req, res) => {
+    try {
+        if (!req.body || typeof req.body !== 'object') {
+            return res.status(400).json({ error: 'Invalid payload' });
+        }
+
+        if (Object.prototype.hasOwnProperty.call(req.body, 'PORT')) {
+            return res.status(400).json({ error: 'PORT is read-only and cannot be changed from web config' });
+        }
+
+        const updates = {};
+        for (const field of CONFIG_EDITABLE_FIELDS) {
+            if (!Object.prototype.hasOwnProperty.call(req.body, field)) continue;
+            updates[field] = String(req.body[field] ?? '').trim();
+        }
+
+        validateConfigUpdates(updates);
+        updateConfig(updates);
+        res.json({ success: true });
+    } catch (ex) {
+        res.status(400).json({ error: ex.message || 'Invalid configuration' });
+    }
+});
+
 app.get('/api/logs/options', (req, res) => {
     res.json(getLogOptions());
 });
@@ -215,10 +269,11 @@ function verifySignature(body, secret, signature) {
 }
 
 async function getGroupMemberName(groupId, userId) {
+    const { CHANNEL_ACCESS_TOKEN: channelAccessToken } = getConfig();
     try {
         const res = await axios.get(`https://api.line.me/v2/bot/group/${groupId}/member/${userId}`, {
             headers: {
-                Authorization: `Bearer ${ChannelAccessToken}`
+                Authorization: `Bearer ${channelAccessToken}`
             }
         });
         return res.data.displayName;
@@ -228,10 +283,11 @@ async function getGroupMemberName(groupId, userId) {
 }
 
 async function getGroupName(groupId) {
+    const { CHANNEL_ACCESS_TOKEN: channelAccessToken } = getConfig();
     try {
         const res = await axios.get(`https://api.line.me/v2/bot/group/${groupId}/summary`, {
             headers: {
-                Authorization: `Bearer ${ChannelAccessToken}`
+                Authorization: `Bearer ${channelAccessToken}`
             }
         });
         return res.data.groupName;
@@ -246,7 +302,8 @@ function sanitizeFolderName(name) {
 }
 
 function getPreferredLogExtensions() {
-    const preferredExt = LogFormat.toLowerCase() === 'csv' ? 'csv' : 'txt';
+    const { LOG_FORMAT: logFormat } = getConfig();
+    const preferredExt = (logFormat || 'csv').toLowerCase() === 'csv' ? 'csv' : 'txt';
     const fallbackExt = preferredExt === 'csv' ? 'txt' : 'csv';
     return [preferredExt, fallbackExt];
 }
@@ -270,9 +327,10 @@ function summaryLogExists(groupName, month) {
 }
 
 async function summarizeLog(groupName, month, ollamaUrl = OllamaUrl) {
+    const { OLLAMA_URL: defaultOllamaUrl } = getConfig();
     const chatText = fs.readFileSync(getLogFilePath(groupName, month), 'utf8');
     const prompt = buildSummaryPrompt(groupName, chatText);
-    return askOllama("", prompt, false, ollamaUrl);
+    return askOllama("", prompt, false, ollamaUrl || defaultOllamaUrl);
 }
 
 function buildSummaryPrompt(groupName, chatText) {
@@ -352,13 +410,14 @@ function escapeHtml(value) {
 }
 
 async function replyText(replyToken, text) {
+    const { CHANNEL_ACCESS_TOKEN: channelAccessToken } = getConfig();
     try {
         await axios.post('https://api.line.me/v2/bot/message/reply', {
             replyToken: replyToken,
             messages: [{ type: 'text', text: text }]
         }, {
             headers: {
-                Authorization: `Bearer ${ChannelAccessToken}`,
+                Authorization: `Bearer ${channelAccessToken}`,
                 'Content-Type': 'application/json'
             }
         });
@@ -368,12 +427,14 @@ async function replyText(replyToken, text) {
 }
 
 async function askOllama(userText, systemPrompt, isJSONResponse, ollamaUrl = OllamaUrl) {
+    const { OLLAMA_URL: defaultOllamaUrl, OLLAMA_MODEL: ollamaModel } = getConfig();
+    const targetOllamaUrl = ollamaUrl || defaultOllamaUrl;
     console.log(`userText: ${userText}`);
     console.log(`systemPrompt: ${systemPrompt}`);
 
     try {
         const payload = {
-            model: OllamaModel,
+            model: ollamaModel,
             format: isJSONResponse ? "json" : undefined,
             messages: [
                 {
@@ -388,7 +449,7 @@ async function askOllama(userText, systemPrompt, isJSONResponse, ollamaUrl = Oll
             stream: false
         };
 
-        const res = await axios.post(ollamaUrl, payload);
+        const res = await axios.post(targetOllamaUrl, payload);
         console.log(`Ollama raw response received`);
 
         return res.data?.message?.content || "ขออภัยค่ะ ระบบไม่สามารถตอบได้ในขณะนี้";
@@ -446,4 +507,65 @@ async function parseCommand(text) {
     } catch (ex) {
         return { action: null, groupName: null, month: null };
     }
+}
+
+function loadConfigFromEnv() {
+    return {
+        CHANNEL_SECRET: process.env.CHANNEL_SECRET || '',
+        CHANNEL_ACCESS_TOKEN: process.env.CHANNEL_ACCESS_TOKEN || '',
+        ADMIN_USER_ID: process.env.ADMIN_USER_ID || '',
+        OLLAMA_URL: process.env.OLLAMA_URL || 'http://localhost:11434/api/chat',
+        OLLAMA_MODEL: process.env.OLLAMA_MODEL || 'gemma3:27b',
+        PORT: process.env.PORT || '5000',
+        LOG_FORMAT: normalizeLogFormat(process.env.LOG_FORMAT || 'csv')
+    };
+}
+
+function getConfig() {
+    return configStore;
+}
+
+function normalizeLogFormat(value) {
+    return String(value || '').toLowerCase() === 'txt' ? 'txt' : 'csv';
+}
+
+function validateConfigUpdates(updates) {
+    if (Object.prototype.hasOwnProperty.call(updates, 'LOG_FORMAT')) {
+        const format = String(updates.LOG_FORMAT || '').toLowerCase();
+        if (format !== 'txt' && format !== 'csv') {
+            throw new Error('LOG_FORMAT must be "txt" or "csv"');
+        }
+        updates.LOG_FORMAT = format;
+    }
+}
+
+function updateConfig(updates) {
+    const nextConfig = { ...configStore, ...updates };
+    nextConfig.LOG_FORMAT = normalizeLogFormat(nextConfig.LOG_FORMAT);
+    writeEnvFile(nextConfig);
+    configStore = nextConfig;
+    for (const field of CONFIG_FIELDS) {
+        process.env[field] = nextConfig[field] || '';
+    }
+}
+
+function writeEnvFile(config) {
+    const lines = CONFIG_FIELDS.map((field) => `${field}=${serializeEnvValue(config[field] || '')}`);
+    fs.writeFileSync(ENV_PATH, lines.join('\n') + '\n', 'utf8');
+}
+
+function serializeEnvValue(value) {
+    const normalized = String(value).replace(/\r?\n/g, ' ');
+    if (normalized === '') return '""';
+    if (/[\s#"'`]/.test(normalized)) {
+        return `"${normalized.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+    }
+    return normalized;
+}
+
+function maskSecret(value) {
+    const raw = String(value || '');
+    if (!raw) return '';
+    if (raw.length <= 6) return '******';
+    return `${raw.slice(0, 3)}***${raw.slice(-3)}`;
 }
