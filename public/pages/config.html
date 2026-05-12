@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>System Config</title>
+    <link rel="stylesheet" href="/css/common.css">
+    <link rel="stylesheet" href="/css/config.css">
+</head>
+<body>
+    <div id="appHeader"></div>
+    <main>
+        <h1>System Config</h1>
+        <p>Manage runtime config from a local JSON file, without reading or writing .env.</p>
+        <section class="panel">
+            <form id="configForm">
+                <div class="grid">
+                    <label>CHANNEL_SECRET
+                        <input id="channelSecret" name="CHANNEL_SECRET" type="text" autocomplete="off">
+                    </label>
+                    <label>CHANNEL_ACCESS_TOKEN
+                        <input id="channelAccessToken" name="CHANNEL_ACCESS_TOKEN" type="text" autocomplete="off">
+                    </label>
+                    <label>ADMIN_USER_ID
+                        <input id="adminUserId" name="ADMIN_USER_ID" type="text">
+                    </label>
+                    <label>OLLAMA_URL
+                        <input id="ollamaUrl" name="OLLAMA_URL" type="url">
+                    </label>
+                    <label>OLLAMA_MODEL
+                        <input id="ollamaModel" name="OLLAMA_MODEL" type="text">
+                    </label>
+                    <label>LOG_FORMAT
+                        <select id="logFormat" name="LOG_FORMAT">
+                            <option value="csv">csv</option>
+                            <option value="txt">txt</option>
+                        </select>
+                    </label>
+                </div>
+                <div class="actions">
+                    <button id="reloadButton" type="button" class="secondary">Reload</button>
+                    <button id="saveButton" type="submit">Save Config</button>
+                </div>
+            </form>
+            <div id="status" class="status"></div>
+        </section>
+    </main>
+    <script src="/js/layout.js"></script>
+    <script src="/js/config.js"></script>
+</body>
+</html>

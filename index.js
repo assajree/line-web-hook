@@ -1,0 +1,599 @@
+const express = require('express');
+const crypto = require('crypto');
+const axios = require('axios');
+const NodeCache = require('node-cache');
+const fs = require('fs');
+const path = require('path');
+const dayjs = require('dayjs');
+
+const app = express();
+const cache = new NodeCache();
+
+// ================= CONFIG =================
+const CONFIG_PATH = path.join(__dirname, 'config.local.json');
+const CONFIG_FIELDS = [
+    'CHANNEL_SECRET',
+    'CHANNEL_ACCESS_TOKEN',
+    'ADMIN_USER_ID',
+    'OLLAMA_URL',
+    'OLLAMA_MODEL',
+    'PORT',
+    'LOG_FORMAT'
+];
+const CONFIG_EDITABLE_FIELDS = CONFIG_FIELDS.filter((field) => field !== 'PORT');
+
+let configStore = loadConfigFromFile();
+const Port = Number.parseInt(configStore.PORT || '5000', 10) || 5000;
+// =========================================
+
+// Middleware to parse raw body for signature verification
+app.use('/webhook', express.raw({ type: 'application/json' }));
+app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public')));
+
+app.post('/webhook', async (req, res) => {
+    try {
+        const { CHANNEL_SECRET: channelSecret, ADMIN_USER_ID: adminUserId, LOG_FORMAT: logFormat } = getConfig();
+        const signature = req.headers['x-line-signature'];
+        const body = req.body;
+
+        // Verify Signature
+        if (!verifySignature(body, channelSecret, signature)) {
+            return res.status(401).send('Unauthorized');
+        }
+
+        const json = JSON.parse(body.toString());
+        const events = json.events;
+
+        if (!events || events.length === 0) {
+            return res.status(200).send('OK');
+        }
+
+        for (const ev of events) {
+            if (ev.type !== 'message') continue;
+
+            const message = ev.message;
+            if (message.type !== 'text') continue;
+
+            const replyToken = ev.replyToken;
+            const userText = message.text;
+            const timestamp = ev.timestamp;
+
+            const dateTime = dayjs(timestamp);
+            const timeText = dateTime.format('YYYY-MM-DD HH:mm:ss');
+
+            const source = ev.source;
+            const sourceType = source.type;
+
+            if (sourceType === 'group') {
+                const groupId = source.groupId;
+                const userId = source.userId;
+
+                const groupCacheKey = `group:${groupId}`;
+                const userCacheKey = `user:${groupId}:${userId}`;
+
+                // ===== GROUP NAME =====
+                let groupName = cache.get(groupCacheKey);
+                if (!groupName) {
+                    groupName = await getGroupName(groupId) || groupId;
+                    cache.set(groupCacheKey, groupName, 86400); // 24 hours
+                }
+
+                // ===== USER NAME =====
+                let displayName = cache.get(userCacheKey);
+                if (!displayName) {
+                    displayName = await getGroupMemberName(groupId, userId) || userId;
+                    cache.set(userCacheKey, displayName, 86400); // 24 hours
+                }
+
+                // ===== LOG =====
+                const safeGroupName = sanitizeFolderName(groupName);
+                const logDir = path.join(__dirname, 'Logs', safeGroupName);
+
+                if (!fs.existsSync(logDir)) {
+                    fs.mkdirSync(logDir, { recursive: true });
+                }
+
+                const fileExt = (logFormat || 'csv').toLowerCase() === 'csv' ? 'csv' : 'txt';
+                const logFile = path.join(logDir, `${dayjs().format('YYYY-MM')}.${fileExt}`);
+
+                let logLine = '';
+                if (fileExt === 'csv') {
+                    const escapeCsv = (str) => `"${String(str).replace(/"/g, '""')}"`;
+                    logLine = `${escapeCsv(timeText)},${escapeCsv(groupName)},${escapeCsv(displayName)},${escapeCsv(userText)}`;
+                    if (!fs.existsSync(logFile)) {
+                        fs.writeFileSync(logFile, '\ufeff"Time","Group","Name","Message"\n', 'utf8');
+                    }
+                } else {
+                    logLine = `[Time : ${timeText}] [Group : ${groupName}] [Name : ${displayName}] : ${userText}`;
+                }
+
+                console.log(logLine);
+
+                try {
+                    fs.appendFileSync(logFile, logLine + '\n', 'utf8');
+                } catch (ex) {
+                    console.log('LOG WRITE ERROR: ' + ex.message);
+                }
+            } else if (sourceType === 'user') {
+                const userId = source.userId;
+                console.log('userId', userId);
+                if (userId === adminUserId) {
+                    const { action, groupName, month } = await parseCommand(userText);
+                    if (action === 'summarize' && groupName && month) {
+                        if (!summaryLogExists(groupName, month)) {
+                            await replyText(replyToken, `ไม่พบข้อมูลของกลุ่ม ${groupName} เดือน ${month}`);
+                            return res.status(200).send('OK');
+                        }
+
+                        const summary = await summarizeLog(groupName, month);
+                        await replyText(replyToken, summary);
+                    } else {
+                        await replyText(replyToken, `ไม่พบข้อมูล`);
+                    }
+                }
+            }
+        }
+
+        return res.status(200).send('OK');
+    } catch (ex) {
+        console.log('ERROR: ' + ex.message);
+        return res.status(400).send(ex.message);
+    }
+});
+
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'pages', 'home.html'));
+});
+
+const basicAuth = (req, res, next) => {
+    const b64auth = (req.headers.authorization || '').split(' ')[1] || '';
+    const [login, password] = Buffer.from(b64auth, 'base64').toString().split(':');
+
+    if (login === 'system' && password === 'csi@') {
+        return next();
+    }
+
+    res.set('WWW-Authenticate', 'Basic realm="401"');
+    res.status(401).send('Authentication required.');
+};
+
+app.use('/logs', basicAuth);
+app.use('/summary', basicAuth);
+app.use('/api/summary', basicAuth);
+app.use('/config', basicAuth);
+app.use('/api/config', basicAuth);
+
+app.get('/summary', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'pages', 'summary.html'));
+});
+
+app.get('/api/summary/options', (req, res) => {
+    res.json(getSummaryOptions());
+});
+
+app.post('/api/summary', async (req, res) => {
+    try {
+        const { ollamaUrl, groupName, month } = req.body || {};
+
+        if (!ollamaUrl || !groupName || !month) {
+            return res.status(400).json({ error: 'กรุณาระบุ OLLAMA_URL, group และเดือนให้ครบ' });
+        }
+
+        if (!summaryLogExists(groupName, month)) {
+            return res.status(404).json({ error: `ไม่พบข้อมูลของกลุ่ม ${groupName} เดือน ${month}` });
+        }
+
+        const summary = await summarizeLog(groupName, month, ollamaUrl);
+        res.json({ summary });
+    } catch (ex) {
+        console.log('SUMMARY API ERROR: ' + ex.message);
+        res.status(500).json({ error: 'ไม่สามารถสรุปข้อมูลได้ในขณะนี้' });
+    }
+});
+
+app.get('/logs', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'pages', 'logs.html'));
+});
+
+app.get('/config', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'pages', 'config.html'));
+});
+
+app.get('/api/config', (req, res) => {
+    const config = getConfig();
+    res.json({
+        values: {
+            CHANNEL_SECRET: config.CHANNEL_SECRET || '',
+            CHANNEL_ACCESS_TOKEN: config.CHANNEL_ACCESS_TOKEN || '',
+            ADMIN_USER_ID: config.ADMIN_USER_ID || '',
+            OLLAMA_URL: config.OLLAMA_URL || '',
+            OLLAMA_MODEL: config.OLLAMA_MODEL || '',
+            LOG_FORMAT: config.LOG_FORMAT || 'csv'
+        },
+        readonlyFields: []
+    });
+});
+
+app.post('/api/config', (req, res) => {
+    try {
+        if (!req.body || typeof req.body !== 'object') {
+            return res.status(400).json({ error: 'Invalid payload' });
+        }
+
+        if (Object.prototype.hasOwnProperty.call(req.body, 'PORT')) {
+            return res.status(400).json({ error: 'PORT is read-only and cannot be changed from web config' });
+        }
+
+        const updates = {};
+        for (const field of CONFIG_EDITABLE_FIELDS) {
+            if (!Object.prototype.hasOwnProperty.call(req.body, field)) continue;
+            updates[field] = String(req.body[field] ?? '').trim();
+        }
+
+        validateConfigUpdates(updates);
+        updateConfig(updates);
+        res.json({ success: true });
+    } catch (ex) {
+        res.status(400).json({ error: ex.message || 'Invalid configuration' });
+    }
+});
+
+app.get('/api/logs/options', (req, res) => {
+    res.json(getLogOptions());
+});
+
+app.get('/logs/view/:groupName/:fileName', (req, res) => {
+    const filePath = getRequestedLogFilePath(req.params.groupName, req.params.fileName);
+
+    if (!fs.existsSync(filePath)) {
+        return res.status(404).send('Log file not found.');
+    }
+
+    res.type('text/plain; charset=utf-8');
+    res.send(fs.readFileSync(filePath, 'utf8'));
+});
+
+app.get('/logs/download/:groupName/:fileName', (req, res) => {
+    const filePath = getRequestedLogFilePath(req.params.groupName, req.params.fileName);
+    const fileName = path.basename(filePath);
+
+    if (!fs.existsSync(filePath)) {
+        return res.status(404).send('Log file not found.');
+    }
+
+    res.download(filePath, fileName);
+});
+
+app.listen(Port, () => {
+    console.log(`Server is running at http://localhost:${Port}`);
+});
+
+// ================= FUNCTIONS =================
+
+function verifySignature(body, secret, signature) {
+    const hash = crypto.createHmac('sha256', secret).update(body).digest('base64');
+    return hash === signature;
+}
+
+async function getGroupMemberName(groupId, userId) {
+    const { CHANNEL_ACCESS_TOKEN: channelAccessToken } = getConfig();
+    try {
+        const res = await axios.get(`https://api.line.me/v2/bot/group/${groupId}/member/${userId}`, {
+            headers: {
+                Authorization: `Bearer ${channelAccessToken}`
+            }
+        });
+        return res.data.displayName;
+    } catch (ex) {
+        return null;
+    }
+}
+
+async function getGroupName(groupId) {
+    const { CHANNEL_ACCESS_TOKEN: channelAccessToken } = getConfig();
+    try {
+        const res = await axios.get(`https://api.line.me/v2/bot/group/${groupId}/summary`, {
+            headers: {
+                Authorization: `Bearer ${channelAccessToken}`
+            }
+        });
+        return res.data.groupName;
+    } catch (ex) {
+        return null;
+    }
+}
+
+function sanitizeFolderName(name) {
+    // Regex for invalid filename chars: < > : " / \ | ? *
+    return name.replace(/[<>:"/\\|?*]/g, '_').trim();
+}
+
+function getPreferredLogExtensions() {
+    const { LOG_FORMAT: logFormat } = getConfig();
+    const preferredExt = (logFormat || 'csv').toLowerCase() === 'csv' ? 'csv' : 'txt';
+    const fallbackExt = preferredExt === 'csv' ? 'txt' : 'csv';
+    return [preferredExt, fallbackExt];
+}
+
+function getLogFilePath(groupName, month) {
+    const safeGroupName = sanitizeFolderName(groupName);
+    const groupDir = path.join(__dirname, 'Logs', safeGroupName);
+
+    for (const fileExt of getPreferredLogExtensions()) {
+        const logPath = path.join(groupDir, `${month}.${fileExt}`);
+        if (fs.existsSync(logPath)) {
+            return logPath;
+        }
+    }
+
+    return path.join(groupDir, `${month}.${getPreferredLogExtensions()[0]}`);
+}
+
+function sanitizeRoutePathPart(value) {
+    return String(value || '').replace(/\.\./g, "").replace(/\//g, "").replace(/\\/g, "");
+}
+
+function getRequestedLogFilePath(groupName, fileName) {
+    const safeGroupName = sanitizeRoutePathPart(groupName);
+    const safeFileName = sanitizeRoutePathPart(fileName);
+
+    if (!safeFileName.endsWith('.txt') && !safeFileName.endsWith('.csv')) {
+        return path.join(__dirname, 'Logs', safeGroupName, '__invalid_log_file__');
+    }
+
+    return path.join(__dirname, 'Logs', safeGroupName, safeFileName);
+}
+
+function summaryLogExists(groupName, month) {
+    return fs.existsSync(getLogFilePath(groupName, month));
+}
+
+async function summarizeLog(groupName, month, ollamaUrl) {
+    const { OLLAMA_URL: defaultOllamaUrl } = getConfig();
+    const chatText = fs.readFileSync(getLogFilePath(groupName, month), 'utf8');
+    const prompt = buildSummaryPrompt(groupName, chatText);
+    return askOllama("", prompt, false, ollamaUrl || defaultOllamaUrl);
+}
+
+function buildSummaryPrompt(groupName, chatText) {
+    return `
+คุณคือผู้ช่วยสรุปบทสนทนา LINE group สำหรับงานบริษัท ชื่อ "${groupName}"
+
+กติกา:
+- สรุปเฉพาะสาระสำคัญ
+- แยกเป็นหัวข้อ bullet
+- ใช้ภาษาไทย สุภาพ เป็นกลาง
+- ห้ามใช้คำหยาบ แม้ในแชทจะมี
+- ระบุ Time และ Name เฉพาะข้อความที่สำคัญ
+- รวมข้อความที่ความหมายซ้ำกัน
+- ไม่ต้องเล่าทุกบรรทัด
+- สรุปให้กระชับ ไม่ต้องทุกบรรทัด
+
+รูปแบบคำตอบ:
+สรุปบทสนทนา:
+- [Time] [Name] : ใจความสรุป
+
+บทสนทนา:
+${chatText}
+`;
+}
+
+function getSummaryOptions() {
+    const logPath = path.join(__dirname, 'Logs');
+    if (!fs.existsSync(logPath)) {
+        return { groups: [] };
+    }
+
+    const groups = fs.readdirSync(logPath, { withFileTypes: true })
+        .filter(dirent => dirent.isDirectory())
+        .map(dirent => {
+            const groupDir = path.join(logPath, dirent.name);
+            const months = fs.readdirSync(groupDir)
+                .filter(fileName => fileName.endsWith('.txt') || fileName.endsWith('.csv'))
+                .map(fileName => path.basename(fileName, path.extname(fileName)))
+                .sort()
+                .reverse();
+
+            return { name: dirent.name, months };
+        });
+
+    return { groups };
+}
+
+function getLogOptions() {
+    const logPath = path.join(__dirname, 'Logs');
+    if (!fs.existsSync(logPath)) {
+        return { groups: [] };
+    }
+
+    const groups = fs.readdirSync(logPath, { withFileTypes: true })
+        .filter(dirent => dirent.isDirectory())
+        .map(dirent => {
+            const groupDir = path.join(logPath, dirent.name);
+            const files = fs.readdirSync(groupDir)
+                .filter(fileName => fileName.endsWith('.txt') || fileName.endsWith('.csv'))
+                .sort()
+                .reverse();
+
+            return { name: dirent.name, files };
+        });
+
+    return { groups };
+}
+
+function escapeHtml(value) {
+    return String(value).replace(/[&<>"']/g, (ch) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+    }[ch]));
+}
+
+async function replyText(replyToken, text) {
+    const { CHANNEL_ACCESS_TOKEN: channelAccessToken } = getConfig();
+    try {
+        await axios.post('https://api.line.me/v2/bot/message/reply', {
+            replyToken: replyToken,
+            messages: [{ type: 'text', text: text }]
+        }, {
+            headers: {
+                Authorization: `Bearer ${channelAccessToken}`,
+                'Content-Type': 'application/json'
+            }
+        });
+    } catch (ex) {
+        console.log('REPLY ERROR: ', ex.message);
+    }
+}
+
+async function askOllama(userText, systemPrompt, isJSONResponse, ollamaUrl) {
+    const { OLLAMA_URL: defaultOllamaUrl, OLLAMA_MODEL: ollamaModel } = getConfig();
+    const targetOllamaUrl = ollamaUrl || defaultOllamaUrl;
+    console.log(`userText: ${userText}`);
+    console.log(`systemPrompt: ${systemPrompt}`);
+
+    try {
+        const payload = {
+            model: ollamaModel,
+            format: isJSONResponse ? "json" : undefined,
+            messages: [
+                {
+                    role: "system",
+                    content: systemPrompt
+                },
+                {
+                    role: "user",
+                    content: (!userText || userText.trim() === '') ? "ทำงานตาม system prompt" : userText
+                }
+            ],
+            stream: false
+        };
+
+        const res = await axios.post(targetOllamaUrl, payload);
+        console.log(`Ollama raw response received`);
+
+        return res.data?.message?.content || "ขออภัยค่ะ ระบบไม่สามารถตอบได้ในขณะนี้";
+    } catch (ex) {
+        console.log('OLLAMA ERROR: ', ex.message);
+        return "ขออภัยค่ะ ระบบไม่สามารถตอบได้ในขณะนี้";
+    }
+}
+
+async function parseCommand(text) {
+    const logPath = path.join(__dirname, 'Logs');
+    let groupList = [];
+    if (fs.existsSync(logPath)) {
+        groupList = fs.readdirSync(logPath, { withFileTypes: true }).filter(dirent => dirent.isDirectory()).map(dirent => dirent.name);
+    }
+
+    const prompt = `
+        You classify the user's intent from a LINE private message.
+
+        Reply with JSON only. Do not include any text outside JSON.
+
+        JSON shape:
+        {
+          "action": "summarize" | "none",
+          "groupName": "string" | null,
+          "month": "yyyy-MM" | null
+        }
+
+        Rules:
+        - action:
+          - Use "summarize" when the user asks to summarize chat data.
+          - Otherwise use "none".
+        - groupName:
+          - Must match one of the allowed group names exactly.
+          - If there is no match, return null.
+          Allowed groups:
+          [${groupList.join(', ')}]
+        - month:
+          - Extract only from the user's message.
+          - If missing or unclear, return null.
+
+        User message:
+        ${text}
+    `;
+
+    const result = await askOllama("", prompt, true);
+
+    try {
+        const json = JSON.parse(result);
+        return {
+            action: json.action,
+            groupName: json.groupName,
+            month: json.month
+        };
+    } catch (ex) {
+        return { action: null, groupName: null, month: null };
+    }
+}
+
+function loadConfigFromFile() {
+    const defaults = getDefaultConfig();
+    if (!fs.existsSync(CONFIG_PATH)) {
+        return defaults;
+    }
+
+    try {
+        const savedConfig = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+        const config = { ...defaults };
+        for (const field of CONFIG_FIELDS) {
+            if (!Object.prototype.hasOwnProperty.call(savedConfig, field)) continue;
+            config[field] = String(savedConfig[field] ?? '');
+        }
+        config.LOG_FORMAT = normalizeLogFormat(config.LOG_FORMAT);
+        return config;
+    } catch (ex) {
+        console.log('CONFIG READ ERROR: ' + ex.message);
+        return defaults;
+    }
+}
+
+function getDefaultConfig() {
+    return {
+        CHANNEL_SECRET: '',
+        CHANNEL_ACCESS_TOKEN: '',
+        ADMIN_USER_ID: '',
+        OLLAMA_URL: 'http://localhost:11434/api/chat',
+        OLLAMA_MODEL: 'gemma3:27b',
+        PORT: process.env.PORT || '5000',
+        LOG_FORMAT: 'csv'
+    };
+}
+
+function getConfig() {
+    return configStore;
+}
+
+function normalizeLogFormat(value) {
+    return String(value || '').toLowerCase() === 'txt' ? 'txt' : 'csv';
+}
+
+function validateConfigUpdates(updates) {
+    if (Object.prototype.hasOwnProperty.call(updates, 'LOG_FORMAT')) {
+        const format = String(updates.LOG_FORMAT || '').toLowerCase();
+        if (format !== 'txt' && format !== 'csv') {
+            throw new Error('LOG_FORMAT must be "txt" or "csv"');
+        }
+        updates.LOG_FORMAT = format;
+    }
+}
+
+function updateConfig(updates) {
+    const nextConfig = { ...configStore, ...updates };
+    nextConfig.LOG_FORMAT = normalizeLogFormat(nextConfig.LOG_FORMAT);
+    writeConfigFile(nextConfig);
+    configStore = nextConfig;
+}
+
+function writeConfigFile(config) {
+    const serializableConfig = {};
+    for (const field of CONFIG_FIELDS) {
+        serializableConfig[field] = config[field] || '';
+    }
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(serializableConfig, null, 2) + '\n', 'utf8');
+}
