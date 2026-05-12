@@ -4,9 +4,11 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Summary Data</title>
+    <link rel="stylesheet" href="/css/common.css">
     <link rel="stylesheet" href="/css/summary.css">
 </head>
 <body>
+    <div id="appHeader"></div>
     <main>
         <h1>Summary Data</h1>
         <p>เลือก group และเดือนจาก log ที่มีอยู่ แล้วส่งข้อมูลไปยัง Ollama เพื่อสรุปผล</p>
@@ -27,6 +29,7 @@
             <textarea id="summaryOutput" placeholder="ผลลัพธ์จาก Ollama จะแสดงที่นี่"></textarea>
         </section>
     </main>
+    <script src="/js/layout.js"></script>
     <script src="/js/summary.js"></script>
 </body>
 </html>

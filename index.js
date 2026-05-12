@@ -117,6 +117,7 @@ app.post('/webhook', async (req, res) => {
                 }
             } else if (sourceType === 'user') {
                 const userId = source.userId;
+                console.log('userId', userId);
                 if (userId === adminUserId) {
                     const { action, groupName, month } = await parseCommand(userText);
                     if (action === 'summarize' && groupName && month) {
