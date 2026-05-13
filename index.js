@@ -444,10 +444,9 @@ function buildIssueSummaryPrompt(groupName, month, chatText) {
 - ผู้แจ้งคือ Name จากบรรทัดที่แจ้งปัญหา
 - หัวข้อการแจ้งปัญหาให้สรุปสั้น กระชับ สุภาพ เป็นภาษาไทย
 
-ตอบกลับเป็น text ธรรมดา ไม่ต้องเป็น JSON และไม่ต้องยึดรูปแบบตารางตายตัว
-สามารถใช้ bullet, numbered list, markdown table หรือรูปแบบอื่นที่อ่านง่ายตามข้อมูลจริง
-ควรระบุวันที่แจ้ง ผู้แจ้ง และสรุปปัญหาให้ชัดเจน
-ถ้าไม่พบรายการแจ้งปัญหา ให้ตอบสั้น ๆ ว่าไม่พบรายการแจ้งปัญหา
+รูปแบบคำตอบ:
+สรุปบทสนทนา:
+- [Time] [Name] : ใจความสรุป
 
 Log:
 ${chatText}
@@ -720,7 +719,7 @@ function maskSecret(value) {
     if (text.length <= 8) {
         return '********';
     }
-    return `${text.slice(0, 4)}${'*'.repeat(Math.max(4, text.length - 8))}${text.slice(-4)}`;
+    return `${text.slice(0, 4)}****${text.slice(-4)}`;
 }
 
 function validateConfigUpdates(updates) {
