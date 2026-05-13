@@ -57,7 +57,7 @@ app.post('/webhook', async (req, res) => {
             const userText = message.text;
             const timestamp = ev.timestamp;
 
-            const dateTime = dayjs(timestamp);
+            const dateTime = dayjs(timestamp).add(7, 'hour');
             const timeText = dateTime.format('YYYY-MM-DD HH:mm:ss');
 
             const source = ev.source;
@@ -86,14 +86,14 @@ app.post('/webhook', async (req, res) => {
 
                 // ===== LOG =====
                 const safeGroupName = sanitizeFolderName(groupName);
-                const logDir = path.join(__dirname, 'Logs', safeGroupName);
+                const logDir = path.join(__dirname, 'logs', safeGroupName);
 
                 if (!fs.existsSync(logDir)) {
                     fs.mkdirSync(logDir, { recursive: true });
                 }
 
                 const fileExt = (logFormat || 'csv').toLowerCase() === 'csv' ? 'csv' : 'txt';
-                const logFile = path.join(logDir, `${dayjs().format('YYYY-MM')}.${fileExt}`);
+                const logFile = path.join(logDir, `${dateTime.format('YYYY-MM')}.${fileExt}`);
 
                 let logLine = '';
                 if (fileExt === 'csv') {
