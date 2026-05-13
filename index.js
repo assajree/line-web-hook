@@ -19,6 +19,8 @@ const CONFIG_FIELDS = [
     'ADMIN_USER_ID',
     'OLLAMA_URL',
     'OLLAMA_MODEL',
+    'GEMINI_API_KEY',
+    'GEMINI_MODEL',
     'LOG_FORMAT'
 ];
 
@@ -161,6 +163,8 @@ const basicAuth = (req, res, next) => {
 app.use('/logs', basicAuth);
 app.use('/summary', basicAuth);
 app.use('/api/summary', basicAuth);
+app.use('/issue-summary', basicAuth);
+app.use('/api/issue-summary', basicAuth);
 app.use('/config', basicAuth);
 app.use('/api/config', basicAuth);
 
@@ -170,6 +174,38 @@ app.get('/summary', (req, res) => {
 
 app.get('/api/summary/options', (req, res) => {
     res.json(getSummaryOptions());
+});
+
+app.get('/issue-summary', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'pages', 'issue-summary.html'));
+});
+
+app.get('/api/issue-summary/options', (req, res) => {
+    res.json(getSummaryOptions());
+});
+
+app.post('/api/issue-summary', async (req, res) => {
+    try {
+        const { groupName, month } = req.body || {};
+
+        if (!groupName || !month) {
+            return res.status(400).json({ error: 'กรุณาระบุ group และเดือนให้ครบ' });
+        }
+
+        if (!summaryLogExists(groupName, month)) {
+            return res.status(404).json({ error: `ไม่พบข้อมูลของกลุ่ม ${groupName} เดือน ${month}` });
+        }
+
+        if (!getConfig().GEMINI_API_KEY) {
+            return res.status(400).json({ error: 'กรุณาตั้งค่า GEMINI_API_KEY ในหน้า Config ก่อนใช้งาน' });
+        }
+
+        const items = await summarizeIssuesWithGemini(groupName, month);
+        res.json({ items });
+    } catch (ex) {
+        console.log('ISSUE SUMMARY API ERROR: ' + ex.message);
+        res.status(500).json({ error: ex.message || 'ไม่สามารถสรุปรายการแจ้งปัญหาได้ในขณะนี้' });
+    }
 });
 
 app.post('/api/summary', async (req, res) => {
@@ -209,9 +245,11 @@ app.get('/api/config', (req, res) => {
             ADMIN_USER_ID: config.ADMIN_USER_ID || '',
             OLLAMA_URL: config.OLLAMA_URL || '',
             OLLAMA_MODEL: config.OLLAMA_MODEL || '',
+            GEMINI_API_KEY: config.GEMINI_API_KEY ? maskSecret(config.GEMINI_API_KEY) : '',
+            GEMINI_MODEL: config.GEMINI_MODEL || '',
             LOG_FORMAT: config.LOG_FORMAT || 'csv'
         },
-        readonlyFields: []
+        readonlyFields: ['GEMINI_API_KEY']
     });
 });
 
@@ -365,6 +403,21 @@ async function summarizeLog(groupName, month, ollamaUrl) {
     return askOllama("", prompt, false, ollamaUrl || defaultOllamaUrl);
 }
 
+async function summarizeIssuesWithGemini(groupName, month) {
+    const chatText = fs.readFileSync(getLogFilePath(groupName, month), 'utf8');
+    const prompt = buildIssueSummaryPrompt(groupName, month, chatText);
+    const resultText = await askGemini(prompt);
+    const parsed = parseGeminiJsonArray(resultText);
+
+    return parsed
+        .map(item => ({
+            date: String(item.date || '').trim(),
+            reporter: String(item.reporter || '').trim(),
+            issue: String(item.issue || '').trim()
+        }))
+        .filter(item => item.date || item.reporter || item.issue);
+}
+
 function buildSummaryPrompt(groupName, chatText) {
     return `
 คุณคือผู้ช่วยสรุปบทสนทนา LINE group สำหรับงานบริษัท ชื่อ "${groupName}"
@@ -384,6 +437,31 @@ function buildSummaryPrompt(groupName, chatText) {
 - [Time] [Name] : ใจความสรุป
 
 บทสนทนา:
+${chatText}
+`;
+}
+
+function buildIssueSummaryPrompt(groupName, month, chatText) {
+    return `
+คุณคือผู้ช่วยวิเคราะห์ log แชท LINE group ชื่อ "${groupName}" เดือน "${month}"
+
+งานของคุณ:
+- คัดเฉพาะข้อความที่เป็นการแจ้งปัญหา แจ้งเคส บอกอาการผิดปกติ ใช้งานไม่ได้ error timeout ข้อมูลผิด หรือขอให้ตรวจสอบปัญหา
+- ไม่ต้องรวมข้อความทั่วไป การตอบรับ การพูดคุยเล่น หรือข้อความที่ไม่ใช่การแจ้งปัญหา
+- ถ้าหลายบรรทัดเป็นปัญหาเดียวกันหรือพูดต่อเนื่องเรื่องเดียวกัน ให้รวมเป็นรายการเดียว
+- ใช้วันที่จาก log ในรูปแบบ YYYY-MM-DD HH:mm:ss ถ้ามีเวลาใน log
+- ผู้แจ้งคือ Name จากบรรทัดที่แจ้งปัญหา
+- หัวข้อการแจ้งปัญหาให้สรุปสั้น กระชับ สุภาพ เป็นภาษาไทย
+
+ตอบกลับเป็น JSON array เท่านั้น ห้ามมี markdown ห้ามมีคำอธิบายอื่น
+รูปแบบ:
+[
+  { "date": "YYYY-MM-DD HH:mm:ss", "reporter": "ชื่อผู้แจ้ง", "issue": "หัวข้อการแจ้งปัญหา" }
+]
+
+ถ้าไม่พบรายการแจ้งปัญหา ให้ตอบ []
+
+Log:
 ${chatText}
 `;
 }
@@ -491,6 +569,68 @@ async function askOllama(userText, systemPrompt, isJSONResponse, ollamaUrl) {
     }
 }
 
+async function askGemini(prompt) {
+    const { GEMINI_API_KEY: geminiApiKey, GEMINI_MODEL: geminiModel } = getConfig();
+
+    if (!geminiApiKey) {
+        throw new Error('กรุณาตั้งค่า GEMINI_API_KEY ในหน้า Config ก่อนใช้งาน');
+    }
+
+    const model = geminiModel || 'gemini-2.5-flash';
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+    const payload = {
+        contents: [
+            {
+                role: 'user',
+                parts: [{ text: prompt }]
+            }
+        ],
+        generationConfig: {
+            responseMimeType: 'application/json'
+        }
+    };
+
+    const res = await axios.post(url, payload, {
+        headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': geminiApiKey
+        },
+        timeout: 90000
+    });
+
+    const text = res.data?.candidates?.[0]?.content?.parts
+        ?.map(part => part.text || '')
+        .join('')
+        .trim();
+
+    if (!text) {
+        throw new Error('Gemini ไม่ได้ส่งผลลัพธ์กลับมา');
+    }
+
+    return text;
+}
+
+function parseGeminiJsonArray(text) {
+    const rawText = String(text || '').trim();
+    const cleaned = rawText
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/\s*```$/i, '')
+        .trim();
+
+    try {
+        const parsed = JSON.parse(cleaned);
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (_ex) {
+        const start = cleaned.indexOf('[');
+        const end = cleaned.lastIndexOf(']');
+        if (start >= 0 && end > start) {
+            const parsed = JSON.parse(cleaned.slice(start, end + 1));
+            return Array.isArray(parsed) ? parsed : [];
+        }
+        throw new Error('Gemini ส่งผลลัพธ์ไม่ใช่ JSON array');
+    }
+}
+
 async function parseCommand(text) {
     const logPath = LOGS_PATH;
     let groupList = [];
@@ -569,6 +709,8 @@ function getDefaultConfig() {
         ADMIN_USER_ID: '',
         OLLAMA_URL: 'http://localhost:11434/api/chat',
         OLLAMA_MODEL: 'gemma3:27b',
+        GEMINI_API_KEY: '',
+        GEMINI_MODEL: 'gemini-2.5-flash',
         LOG_FORMAT: 'csv'
     };
 }
@@ -606,6 +748,10 @@ function normalizeLogFormat(value) {
 }
 
 function validateConfigUpdates(updates) {
+    if (Object.prototype.hasOwnProperty.call(updates, 'GEMINI_API_KEY') && isMaskedSecret(updates.GEMINI_API_KEY)) {
+        delete updates.GEMINI_API_KEY;
+    }
+
     if (Object.prototype.hasOwnProperty.call(updates, 'LOG_FORMAT')) {
         const format = String(updates.LOG_FORMAT || '').toLowerCase();
         if (format !== 'txt' && format !== 'csv') {
@@ -613,6 +759,22 @@ function validateConfigUpdates(updates) {
         }
         updates.LOG_FORMAT = format;
     }
+}
+
+function maskSecret(value) {
+    const text = String(value || '');
+    if (!text) {
+        return '';
+    }
+    if (text.length <= 8) {
+        return '********';
+    }
+    return `${text.slice(0, 4)}${'*'.repeat(Math.max(4, text.length - 8))}${text.slice(-4)}`;
+}
+
+function isMaskedSecret(value) {
+    const text = String(value || '').trim();
+    return text !== '' && (/^\*+$/.test(text) || text.includes('****'));
 }
 
 function updateConfig(updates) {

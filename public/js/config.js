@@ -9,6 +9,8 @@ const fields = {
     ADMIN_USER_ID: document.getElementById('adminUserId'),
     OLLAMA_URL: document.getElementById('ollamaUrl'),
     OLLAMA_MODEL: document.getElementById('ollamaModel'),
+    GEMINI_API_KEY: document.getElementById('geminiApiKey'),
+    GEMINI_MODEL: document.getElementById('geminiModel'),
     LOG_FORMAT: document.getElementById('logFormat')
 };
 
@@ -44,6 +46,8 @@ async function saveConfig(event) {
             ADMIN_USER_ID: fields.ADMIN_USER_ID.value.trim(),
             OLLAMA_URL: fields.OLLAMA_URL.value.trim(),
             OLLAMA_MODEL: fields.OLLAMA_MODEL.value.trim(),
+            GEMINI_API_KEY: fields.GEMINI_API_KEY.value.trim(),
+            GEMINI_MODEL: fields.GEMINI_MODEL.value.trim(),
             LOG_FORMAT: fields.LOG_FORMAT.value.trim()
         };
 
@@ -68,6 +72,8 @@ function fillForm(values) {
     fields.ADMIN_USER_ID.value = values.ADMIN_USER_ID || '';
     fields.OLLAMA_URL.value = values.OLLAMA_URL || '';
     fields.OLLAMA_MODEL.value = values.OLLAMA_MODEL || '';
+    fields.GEMINI_API_KEY.value = values.GEMINI_API_KEY || '';
+    fields.GEMINI_MODEL.value = values.GEMINI_MODEL || '';
     fields.LOG_FORMAT.value = values.LOG_FORMAT || 'csv';
 }
 

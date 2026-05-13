@@ -10,6 +10,7 @@
         { href: '/', label: 'Home' },
         { href: '/logs', label: 'Logs' },
         { href: '/summary', label: 'Summary' },
+        { href: '/issue-summary', label: 'Issue Summary' },
         { href: '/config', label: 'Config' }
     ];
 
