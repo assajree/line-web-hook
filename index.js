@@ -17,13 +17,11 @@ const CONFIG_FIELDS = [
     'ADMIN_USER_ID',
     'OLLAMA_URL',
     'OLLAMA_MODEL',
-    'PORT',
     'LOG_FORMAT'
 ];
-const CONFIG_EDITABLE_FIELDS = CONFIG_FIELDS.filter((field) => field !== 'PORT');
 
 let configStore = loadConfigFromFile();
-const Port = Number.parseInt(configStore.PORT || '5000', 10) || 5000;
+const Port = getPortFromArgs(process.argv);
 // =========================================
 
 // Middleware to parse raw body for signature verification
@@ -59,7 +57,7 @@ app.post('/webhook', async (req, res) => {
             const userText = message.text;
             const timestamp = ev.timestamp;
 
-            const dateTime = dayjs(timestamp);
+            const dateTime = dayjs(timestamp).add(7, 'hour');
             const timeText = dateTime.format('YYYY-MM-DD HH:mm:ss');
 
             const source = ev.source;
@@ -88,24 +86,24 @@ app.post('/webhook', async (req, res) => {
 
                 // ===== LOG =====
                 const safeGroupName = sanitizeFolderName(groupName);
-                const logDir = path.join(__dirname, 'Logs', safeGroupName);
+                const logDir = path.join(__dirname, 'logs', safeGroupName);
 
                 if (!fs.existsSync(logDir)) {
                     fs.mkdirSync(logDir, { recursive: true });
                 }
 
                 const fileExt = (logFormat || 'csv').toLowerCase() === 'csv' ? 'csv' : 'txt';
-                const logFile = path.join(logDir, `${dayjs().format('YYYY-MM')}.${fileExt}`);
+                const logFile = path.join(logDir, `${dateTime.format('YYYY-MM')}.${fileExt}`);
 
                 let logLine = '';
                 if (fileExt === 'csv') {
                     const escapeCsv = (str) => `"${String(str).replace(/"/g, '""')}"`;
-                    logLine = `${escapeCsv(timeText)},${escapeCsv(groupName)},${escapeCsv(displayName)},${escapeCsv(userText)}`;
+                    logLine = `${escapeCsv(timeText)},${escapeCsv(displayName)},${escapeCsv(userText)}`;
                     if (!fs.existsSync(logFile)) {
-                        fs.writeFileSync(logFile, '\ufeff"Time","Group","Name","Message"\n', 'utf8');
+                        fs.writeFileSync(logFile, '\ufeff"Time","Name","Message"\n', 'utf8');
                     }
                 } else {
-                    logLine = `[Time : ${timeText}] [Group : ${groupName}] [Name : ${displayName}] : ${userText}`;
+                    logLine = `[Time : ${timeText}] [Name : ${displayName}] : ${userText}`;
                 }
 
                 console.log(logLine);
@@ -221,12 +219,8 @@ app.post('/api/config', (req, res) => {
             return res.status(400).json({ error: 'Invalid payload' });
         }
 
-        if (Object.prototype.hasOwnProperty.call(req.body, 'PORT')) {
-            return res.status(400).json({ error: 'PORT is read-only and cannot be changed from web config' });
-        }
-
         const updates = {};
-        for (const field of CONFIG_EDITABLE_FIELDS) {
+        for (const field of CONFIG_FIELDS) {
             if (!Object.prototype.hasOwnProperty.call(req.body, field)) continue;
             updates[field] = String(req.body[field] ?? '').trim();
         }
@@ -256,13 +250,13 @@ app.get('/logs/view/:groupName/:fileName', (req, res) => {
 
 app.get('/logs/download/:groupName/:fileName', (req, res) => {
     const filePath = getRequestedLogFilePath(req.params.groupName, req.params.fileName);
-    const fileName = path.basename(filePath);
+    const downloadFileName = getDownloadLogFileName(req.params.groupName, filePath);
 
     if (!fs.existsSync(filePath)) {
         return res.status(404).send('Log file not found.');
     }
 
-    res.download(filePath, fileName);
+    res.download(filePath, downloadFileName);
 });
 
 app.listen(Port, () => {
@@ -307,6 +301,19 @@ async function getGroupName(groupId) {
 function sanitizeFolderName(name) {
     // Regex for invalid filename chars: < > : " / \ | ? *
     return name.replace(/[<>:"/\\|?*]/g, '_').trim();
+}
+
+function sanitizeDownloadFileNamePart(value) {
+    return String(value || '').replace(/[<>:"/\\|?*]/g, '').trim();
+}
+
+function getDownloadLogFileName(groupName, filePath) {
+    const originalFileName = path.basename(filePath);
+    const fileExt = path.extname(originalFileName);
+    const month = path.basename(originalFileName, fileExt).replace(/-/g, '');
+    const safeGroupName = sanitizeDownloadFileNamePart(groupName) || 'group';
+
+    return `${safeGroupName}_${month}${fileExt}`;
 }
 
 function getPreferredLogExtensions() {
@@ -560,13 +567,36 @@ function getDefaultConfig() {
         ADMIN_USER_ID: '',
         OLLAMA_URL: 'http://localhost:11434/api/chat',
         OLLAMA_MODEL: 'gemma3:27b',
-        PORT: process.env.PORT || '5000',
         LOG_FORMAT: 'csv'
     };
 }
 
 function getConfig() {
     return configStore;
+}
+
+function getPortFromArgs(argv) {
+    const defaultPort = 5000;
+
+    for (let i = 2; i < argv.length; i += 1) {
+        const arg = argv[i];
+        if (arg === '--port') {
+            return parsePort(argv[i + 1], defaultPort);
+        }
+        if (arg.startsWith('--port=')) {
+            return parsePort(arg.slice('--port='.length), defaultPort);
+        }
+    }
+
+    return defaultPort;
+}
+
+function parsePort(value, fallback) {
+    const port = Number.parseInt(value, 10);
+    if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+        return fallback;
+    }
+    return port;
 }
 
 function normalizeLogFormat(value) {
