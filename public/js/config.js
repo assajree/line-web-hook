@@ -20,7 +20,7 @@ form.addEventListener('submit', saveConfig);
 loadConfig();
 
 async function loadConfig() {
-    setStatus('กำลังโหลดค่า config...', '');
+    setStatus('กำลังโหลด config...', '');
     setBusy(true);
     try {
         const res = await fetch('/api/config');
@@ -37,7 +37,7 @@ async function loadConfig() {
 
 async function saveConfig(event) {
     event.preventDefault();
-    setStatus('กำลังบันทึก...', '');
+    setStatus('กำลังบันทึก config...', '');
     setBusy(true);
     try {
         const payload = {

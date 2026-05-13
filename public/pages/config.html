@@ -14,34 +14,66 @@
         <p>Manage runtime config from a local JSON file, without reading or writing .env.</p>
         <section class="panel">
             <form id="configForm">
-                <div class="grid">
-                    <label>CHANNEL_SECRET
-                        <input id="channelSecret" name="CHANNEL_SECRET" type="text" autocomplete="off">
-                    </label>
-                    <label>CHANNEL_ACCESS_TOKEN
-                        <input id="channelAccessToken" name="CHANNEL_ACCESS_TOKEN" type="text" autocomplete="off">
-                    </label>
-                    <label>ADMIN_USER_ID
-                        <input id="adminUserId" name="ADMIN_USER_ID" type="text">
-                    </label>
-                    <label>OLLAMA_URL
-                        <input id="ollamaUrl" name="OLLAMA_URL" type="url">
-                    </label>
-                    <label>OLLAMA_MODEL
-                        <input id="ollamaModel" name="OLLAMA_MODEL" type="text">
-                    </label>
-                    <label>GEMINI_API_KEY
-                        <input id="geminiApiKey" name="GEMINI_API_KEY" type="password" autocomplete="off" placeholder="Paste a new key to update">
-                    </label>
-                    <label>GEMINI_MODEL
-                        <input id="geminiModel" name="GEMINI_MODEL" type="text">
-                    </label>
-                    <label>LOG_FORMAT
-                        <select id="logFormat" name="LOG_FORMAT">
-                            <option value="csv">csv</option>
-                            <option value="txt">txt</option>
-                        </select>
-                    </label>
+                <div class="config-groups">
+                    <section class="config-group">
+                        <div class="config-group__header">
+                            <h2>LINE Bot</h2>
+                            <p>Credentials and admin user for receiving LINE webhook events.</p>
+                        </div>
+                        <div class="grid">
+                            <label>CHANNEL_SECRET
+                                <input id="channelSecret" name="CHANNEL_SECRET" type="text" autocomplete="off">
+                            </label>
+                            <label>CHANNEL_ACCESS_TOKEN
+                                <input id="channelAccessToken" name="CHANNEL_ACCESS_TOKEN" type="text" autocomplete="off">
+                            </label>
+                            <label>ADMIN_USER_ID
+                                <input id="adminUserId" name="ADMIN_USER_ID" type="text">
+                            </label>
+                        </div>
+                    </section>
+                    <section class="config-group">
+                        <div class="config-group__header">
+                            <h2>Ollama</h2>
+                            <p>Local model endpoint used by the chat summary workflow.</p>
+                        </div>
+                        <div class="grid">
+                            <label>OLLAMA_URL
+                                <input id="ollamaUrl" name="OLLAMA_URL" type="url">
+                            </label>
+                            <label>OLLAMA_MODEL
+                                <input id="ollamaModel" name="OLLAMA_MODEL" type="text">
+                            </label>
+                        </div>
+                    </section>
+                    <section class="config-group">
+                        <div class="config-group__header">
+                            <h2>Gemini</h2>
+                            <p>Google Gemini settings used by the issue summary workflow.</p>
+                        </div>
+                        <div class="grid">
+                            <label>GEMINI_API_KEY
+                                <input id="geminiApiKey" name="GEMINI_API_KEY" type="password" autocomplete="off" placeholder="Paste a new key to update">
+                            </label>
+                            <label>GEMINI_MODEL
+                                <input id="geminiModel" name="GEMINI_MODEL" type="text">
+                            </label>
+                        </div>
+                    </section>
+                    <section class="config-group">
+                        <div class="config-group__header">
+                            <h2>Other</h2>
+                            <p>General runtime options that do not belong to a provider.</p>
+                        </div>
+                        <div class="grid">
+                            <label>LOG_FORMAT
+                                <select id="logFormat" name="LOG_FORMAT">
+                                    <option value="csv">csv</option>
+                                    <option value="txt">txt</option>
+                                </select>
+                            </label>
+                        </div>
+                    </section>
                 </div>
                 <div class="actions">
                     <button id="reloadButton" type="button" class="secondary">Reload</button>

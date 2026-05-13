@@ -1,0 +1,3 @@
+- เปลี่ยน gemini sunnary result เป็น text ธรรมดา
+- เอา log format ออกจากหน้า config และเก็บเป็น constant แทน
+- เพิ่ม config ask ai เพื่อเลือก ai จะใช้สรุปผลแชทของ admin
