@@ -11,7 +11,7 @@
     <div id="appHeader"></div>
     <main>
         <h1>Issue Summary</h1>
-        <p>เลือก group และเดือนจาก log ที่มีอยู่ แล้วใช้ Gemini สรุปรายการแจ้งปัญหาเป็นตาราง</p>
+        <p>เลือก group และเดือนจาก log ที่มีอยู่ แล้วใช้ Gemini สรุปรายการแจ้งปัญหาเป็น text ธรรมดา</p>
         <section class="panel">
             <div class="grid">
                 <label>Group
@@ -23,22 +23,7 @@
                 <button id="summaryButton" type="button">Summary</button>
             </div>
             <div id="status" class="status"></div>
-            <div class="table-wrap">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>วันที่แจ้ง</th>
-                            <th>ผู้แจ้ง</th>
-                            <th>หัวข้อการแจ้งปัญหา</th>
-                        </tr>
-                    </thead>
-                    <tbody id="issueTableBody">
-                        <tr>
-                            <td colspan="3" class="empty">เลือกข้อมูลแล้วกด Summary เพื่อเริ่มสรุป</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
+            <textarea id="summaryOutput" placeholder="เลือกข้อมูลแล้วกด Summary เพื่อเริ่มสรุป"></textarea>
         </section>
     </main>
     <script src="/js/layout.js"></script>

@@ -43,52 +43,19 @@ button:disabled {
     cursor: wait;
 }
 
-.table-wrap {
+textarea {
+    width: 100%;
+    min-height: 360px;
     margin-top: 20px;
-    overflow-x: auto;
     border: 1px solid var(--line);
     border-radius: 8px;
     background: #ffffff;
-}
-
-table {
-    width: 100%;
-    border-collapse: collapse;
-    min-width: 720px;
-}
-
-th,
-td {
-    padding: 13px 14px;
-    border-bottom: 1px solid var(--line);
-    text-align: left;
-    vertical-align: top;
+    color: var(--text);
+    padding: 14px;
+    font: inherit;
     line-height: 1.5;
-}
-
-th {
-    background: #f1f6f4;
-    color: var(--accent-dark);
-    font-size: 13px;
-    font-weight: 800;
-}
-
-td:first-child {
-    width: 210px;
-    white-space: nowrap;
-}
-
-td:nth-child(2) {
-    width: 180px;
-}
-
-tr:last-child td {
-    border-bottom: 0;
-}
-
-.empty {
-    color: var(--muted);
-    text-align: center;
+    resize: vertical;
+    white-space: pre-wrap;
 }
 
 @media (max-width: 860px) {

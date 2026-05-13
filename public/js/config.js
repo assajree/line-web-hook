@@ -2,6 +2,7 @@ const form = document.getElementById('configForm');
 const reloadButton = document.getElementById('reloadButton');
 const saveButton = document.getElementById('saveButton');
 const statusText = document.getElementById('status');
+const secretFieldNames = ['CHANNEL_SECRET', 'CHANNEL_ACCESS_TOKEN', 'GEMINI_API_KEY'];
 
 const fields = {
     CHANNEL_SECRET: document.getElementById('channelSecret'),
@@ -75,6 +76,10 @@ function fillForm(values) {
     fields.GEMINI_API_KEY.value = values.GEMINI_API_KEY || '';
     fields.GEMINI_MODEL.value = values.GEMINI_MODEL || '';
     fields.LOG_FORMAT.value = values.LOG_FORMAT || 'csv';
+
+    for (const fieldName of secretFieldNames) {
+        fields[fieldName].placeholder = 'Paste a new value to replace the saved secret';
+    }
 }
 
 function setBusy(isBusy) {

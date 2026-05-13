@@ -23,6 +23,7 @@ const CONFIG_FIELDS = [
     'GEMINI_MODEL',
     'LOG_FORMAT'
 ];
+const SECRET_CONFIG_FIELDS = ['CHANNEL_SECRET', 'CHANNEL_ACCESS_TOKEN', 'GEMINI_API_KEY'];
 
 let configStore = loadConfigFromFile();
 const Port = getPortFromArgs(process.argv);
@@ -200,8 +201,8 @@ app.post('/api/issue-summary', async (req, res) => {
             return res.status(400).json({ error: 'กรุณาตั้งค่า GEMINI_API_KEY ในหน้า Config ก่อนใช้งาน' });
         }
 
-        const items = await summarizeIssuesWithGemini(groupName, month);
-        res.json({ items });
+        const summary = await summarizeIssuesWithGemini(groupName, month);
+        res.json({ summary });
     } catch (ex) {
         console.log('ISSUE SUMMARY API ERROR: ' + ex.message);
         res.status(500).json({ error: ex.message || 'ไม่สามารถสรุปรายการแจ้งปัญหาได้ในขณะนี้' });
@@ -240,16 +241,15 @@ app.get('/api/config', (req, res) => {
     const config = getConfig();
     res.json({
         values: {
-            CHANNEL_SECRET: config.CHANNEL_SECRET || '',
-            CHANNEL_ACCESS_TOKEN: config.CHANNEL_ACCESS_TOKEN || '',
+            CHANNEL_SECRET: maskSecret(config.CHANNEL_SECRET),
+            CHANNEL_ACCESS_TOKEN: maskSecret(config.CHANNEL_ACCESS_TOKEN),
             ADMIN_USER_ID: config.ADMIN_USER_ID || '',
             OLLAMA_URL: config.OLLAMA_URL || '',
             OLLAMA_MODEL: config.OLLAMA_MODEL || '',
-            GEMINI_API_KEY: config.GEMINI_API_KEY ? maskSecret(config.GEMINI_API_KEY) : '',
+            GEMINI_API_KEY: maskSecret(config.GEMINI_API_KEY),
             GEMINI_MODEL: config.GEMINI_MODEL || '',
             LOG_FORMAT: config.LOG_FORMAT || 'csv'
-        },
-        readonlyFields: ['GEMINI_API_KEY']
+        }
     });
 });
 
@@ -406,16 +406,7 @@ async function summarizeLog(groupName, month, ollamaUrl) {
 async function summarizeIssuesWithGemini(groupName, month) {
     const chatText = fs.readFileSync(getLogFilePath(groupName, month), 'utf8');
     const prompt = buildIssueSummaryPrompt(groupName, month, chatText);
-    const resultText = await askGemini(prompt);
-    const parsed = parseGeminiJsonArray(resultText);
-
-    return parsed
-        .map(item => ({
-            date: String(item.date || '').trim(),
-            reporter: String(item.reporter || '').trim(),
-            issue: String(item.issue || '').trim()
-        }))
-        .filter(item => item.date || item.reporter || item.issue);
+    return askGemini(prompt);
 }
 
 function buildSummaryPrompt(groupName, chatText) {
@@ -453,13 +444,10 @@ function buildIssueSummaryPrompt(groupName, month, chatText) {
 - ผู้แจ้งคือ Name จากบรรทัดที่แจ้งปัญหา
 - หัวข้อการแจ้งปัญหาให้สรุปสั้น กระชับ สุภาพ เป็นภาษาไทย
 
-ตอบกลับเป็น JSON array เท่านั้น ห้ามมี markdown ห้ามมีคำอธิบายอื่น
-รูปแบบ:
-[
-  { "date": "YYYY-MM-DD HH:mm:ss", "reporter": "ชื่อผู้แจ้ง", "issue": "หัวข้อการแจ้งปัญหา" }
-]
-
-ถ้าไม่พบรายการแจ้งปัญหา ให้ตอบ []
+ตอบกลับเป็น text ธรรมดา ไม่ต้องเป็น JSON และไม่ต้องยึดรูปแบบตารางตายตัว
+สามารถใช้ bullet, numbered list, markdown table หรือรูปแบบอื่นที่อ่านง่ายตามข้อมูลจริง
+ควรระบุวันที่แจ้ง ผู้แจ้ง และสรุปปัญหาให้ชัดเจน
+ถ้าไม่พบรายการแจ้งปัญหา ให้ตอบสั้น ๆ ว่าไม่พบรายการแจ้งปัญหา
 
 Log:
 ${chatText}
@@ -585,9 +573,7 @@ async function askGemini(prompt) {
                 parts: [{ text: prompt }]
             }
         ],
-        generationConfig: {
-            responseMimeType: 'application/json'
-        }
+        generationConfig: {}
     };
 
     const res = await axios.post(url, payload, {
@@ -608,27 +594,6 @@ async function askGemini(prompt) {
     }
 
     return text;
-}
-
-function parseGeminiJsonArray(text) {
-    const rawText = String(text || '').trim();
-    const cleaned = rawText
-        .replace(/^```(?:json)?\s*/i, '')
-        .replace(/\s*```$/i, '')
-        .trim();
-
-    try {
-        const parsed = JSON.parse(cleaned);
-        return Array.isArray(parsed) ? parsed : [];
-    } catch (_ex) {
-        const start = cleaned.indexOf('[');
-        const end = cleaned.lastIndexOf(']');
-        if (start >= 0 && end > start) {
-            const parsed = JSON.parse(cleaned.slice(start, end + 1));
-            return Array.isArray(parsed) ? parsed : [];
-        }
-        throw new Error('Gemini ส่งผลลัพธ์ไม่ใช่ JSON array');
-    }
 }
 
 async function parseCommand(text) {
@@ -747,9 +712,22 @@ function normalizeLogFormat(value) {
     return String(value || '').toLowerCase() === 'txt' ? 'txt' : 'csv';
 }
 
+function maskSecret(value) {
+    const text = String(value || '').trim();
+    if (!text) {
+        return '';
+    }
+    if (text.length <= 8) {
+        return '********';
+    }
+    return `${text.slice(0, 4)}${'*'.repeat(Math.max(4, text.length - 8))}${text.slice(-4)}`;
+}
+
 function validateConfigUpdates(updates) {
-    if (Object.prototype.hasOwnProperty.call(updates, 'GEMINI_API_KEY') && isMaskedSecret(updates.GEMINI_API_KEY)) {
-        delete updates.GEMINI_API_KEY;
+    for (const field of SECRET_CONFIG_FIELDS) {
+        if (Object.prototype.hasOwnProperty.call(updates, field) && isMaskedSecret(updates[field])) {
+            delete updates[field];
+        }
     }
 
     if (Object.prototype.hasOwnProperty.call(updates, 'LOG_FORMAT')) {
@@ -759,17 +737,6 @@ function validateConfigUpdates(updates) {
         }
         updates.LOG_FORMAT = format;
     }
-}
-
-function maskSecret(value) {
-    const text = String(value || '');
-    if (!text) {
-        return '';
-    }
-    if (text.length <= 8) {
-        return '********';
-    }
-    return `${text.slice(0, 4)}${'*'.repeat(Math.max(4, text.length - 8))}${text.slice(-4)}`;
 }
 
 function isMaskedSecret(value) {
@@ -791,3 +758,4 @@ function writeConfigFile(config) {
     }
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(serializableConfig, null, 2) + '\n', 'utf8');
 }
+

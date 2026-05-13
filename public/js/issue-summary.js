@@ -1,7 +1,7 @@
 const groupSelect = document.getElementById('groupSelect');
 const monthSelect = document.getElementById('monthSelect');
 const summaryButton = document.getElementById('summaryButton');
-const issueTableBody = document.getElementById('issueTableBody');
+const summaryOutput = document.getElementById('summaryOutput');
 const statusText = document.getElementById('status');
 let groups = [];
 
@@ -34,7 +34,8 @@ function renderMonths() {
 
 async function summarizeIssues() {
     summaryButton.disabled = true;
-    renderEmpty('กำลังสรุปรายการแจ้งปัญหา...');
+    summaryOutput.value = '';
+    summaryOutput.placeholder = 'กำลังสรุปรายการแจ้งปัญหา...';
     statusText.className = 'status';
     statusText.textContent = 'กำลังสรุปรายการแจ้งปัญหา...';
 
@@ -46,33 +47,15 @@ async function summarizeIssues() {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Issue summary failed');
-        renderItems(data.items || []);
-        statusText.textContent = data.items && data.items.length ? 'สรุปรายการแจ้งปัญหาเสร็จแล้ว' : 'ไม่พบรายการแจ้งปัญหาใน log ที่เลือก';
+        summaryOutput.value = data.summary || '';
+        summaryOutput.placeholder = 'ผลลัพธ์จาก Gemini จะแสดงที่นี่';
+        statusText.textContent = summaryOutput.value ? 'สรุปรายการแจ้งปัญหาเสร็จแล้ว' : 'Gemini ไม่ได้ส่งผลลัพธ์กลับมา';
     } catch (err) {
         setError(err.message || 'สรุปรายการแจ้งปัญหาไม่สำเร็จ');
-        renderEmpty('ไม่สามารถแสดงผลลัพธ์ได้');
+        summaryOutput.placeholder = 'ไม่สามารถแสดงผลลัพธ์ได้';
     } finally {
         renderMonths();
     }
-}
-
-function renderItems(items) {
-    if (!items.length) {
-        renderEmpty('ไม่พบรายการแจ้งปัญหา');
-        return;
-    }
-
-    issueTableBody.innerHTML = items.map(item => `
-        <tr>
-            <td>${escapeHtml(item.date || '-')}</td>
-            <td>${escapeHtml(item.reporter || '-')}</td>
-            <td>${escapeHtml(item.issue || '-')}</td>
-        </tr>
-    `).join('');
-}
-
-function renderEmpty(message) {
-    issueTableBody.innerHTML = '<tr><td colspan="3" class="empty">' + escapeHtml(message) + '</td></tr>';
 }
 
 function setError(message) {
