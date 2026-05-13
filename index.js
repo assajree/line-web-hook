@@ -11,6 +11,8 @@ const cache = new NodeCache();
 
 // ================= CONFIG =================
 const CONFIG_PATH = path.join(__dirname, 'config.local.json');
+const LOGS_FOLDER_NAME = 'logs';
+const LOGS_PATH = path.join(__dirname, LOGS_FOLDER_NAME);
 const CONFIG_FIELDS = [
     'CHANNEL_SECRET',
     'CHANNEL_ACCESS_TOKEN',
@@ -90,7 +92,7 @@ app.post('/webhook', async (req, res) => {
 
                 // ===== LOG =====
                 const safeGroupName = sanitizeFolderName(groupName);
-                const logDir = path.join(__dirname, 'logs', safeGroupName);
+                const logDir = path.join(LOGS_PATH, safeGroupName);
 
                 if (!fs.existsSync(logDir)) {
                     fs.mkdirSync(logDir, { recursive: true });
@@ -325,7 +327,7 @@ function getPreferredLogExtensions() {
 
 function getLogFilePath(groupName, month) {
     const safeGroupName = sanitizeFolderName(groupName);
-    const groupDir = path.join(__dirname, 'logs', safeGroupName);
+    const groupDir = path.join(LOGS_PATH, safeGroupName);
 
     for (const fileExt of getPreferredLogExtensions()) {
         const logPath = path.join(groupDir, `${month}.${fileExt}`);
@@ -346,10 +348,10 @@ function getRequestedLogFilePath(groupName, fileName) {
     const safeFileName = sanitizeRoutePathPart(fileName);
 
     if (!safeFileName.endsWith('.txt') && !safeFileName.endsWith('.csv')) {
-        return path.join(__dirname, 'logs', safeGroupName, '__invalid_log_file__');
+        return path.join(LOGS_PATH, safeGroupName, '__invalid_log_file__');
     }
 
-    return path.join(__dirname, 'logs', safeGroupName, safeFileName);
+    return path.join(LOGS_PATH, safeGroupName, safeFileName);
 }
 
 function summaryLogExists(groupName, month) {
@@ -387,7 +389,7 @@ ${chatText}
 }
 
 function getSummaryOptions() {
-    const logPath = path.join(__dirname, 'logs');
+    const logPath = LOGS_PATH;
     if (!fs.existsSync(logPath)) {
         return { groups: [] };
     }
@@ -409,7 +411,7 @@ function getSummaryOptions() {
 }
 
 function getLogOptions() {
-    const logPath = path.join(__dirname, 'logs');
+    const logPath = LOGS_PATH;
     if (!fs.existsSync(logPath)) {
         return { groups: [] };
     }
@@ -490,7 +492,7 @@ async function askOllama(userText, systemPrompt, isJSONResponse, ollamaUrl) {
 }
 
 async function parseCommand(text) {
-    const logPath = path.join(__dirname, 'logs');
+    const logPath = LOGS_PATH;
     let groupList = [];
     if (fs.existsSync(logPath)) {
         groupList = fs.readdirSync(logPath, { withFileTypes: true }).filter(dirent => dirent.isDirectory()).map(dirent => dirent.name);
