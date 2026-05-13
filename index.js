@@ -250,13 +250,13 @@ app.get('/logs/view/:groupName/:fileName', (req, res) => {
 
 app.get('/logs/download/:groupName/:fileName', (req, res) => {
     const filePath = getRequestedLogFilePath(req.params.groupName, req.params.fileName);
-    const fileName = path.basename(filePath);
+    const downloadFileName = getDownloadLogFileName(req.params.groupName, filePath);
 
     if (!fs.existsSync(filePath)) {
         return res.status(404).send('Log file not found.');
     }
 
-    res.download(filePath, fileName);
+    res.download(filePath, downloadFileName);
 });
 
 app.listen(Port, () => {
@@ -301,6 +301,19 @@ async function getGroupName(groupId) {
 function sanitizeFolderName(name) {
     // Regex for invalid filename chars: < > : " / \ | ? *
     return name.replace(/[<>:"/\\|?*]/g, '_').trim();
+}
+
+function sanitizeDownloadFileNamePart(value) {
+    return String(value || '').replace(/[<>:"/\\|?*]/g, '').trim();
+}
+
+function getDownloadLogFileName(groupName, filePath) {
+    const originalFileName = path.basename(filePath);
+    const fileExt = path.extname(originalFileName);
+    const month = path.basename(originalFileName, fileExt).replace(/-/g, '');
+    const safeGroupName = sanitizeDownloadFileNamePart(groupName) || 'group';
+
+    return `${safeGroupName}_${month}${fileExt}`;
 }
 
 function getPreferredLogExtensions() {
