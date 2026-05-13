@@ -24,6 +24,10 @@ let configStore = loadConfigFromFile();
 const Port = getPortFromArgs(process.argv);
 // =========================================
 
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'pages', 'home.html'));
+});
+
 // Middleware to parse raw body for signature verification
 app.use('/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json());
@@ -138,10 +142,6 @@ app.post('/webhook', async (req, res) => {
         console.log('ERROR: ' + ex.message);
         return res.status(400).send(ex.message);
     }
-});
-
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'pages', 'home.html'));
 });
 
 const basicAuth = (req, res, next) => {
@@ -325,7 +325,7 @@ function getPreferredLogExtensions() {
 
 function getLogFilePath(groupName, month) {
     const safeGroupName = sanitizeFolderName(groupName);
-    const groupDir = path.join(__dirname, 'Logs', safeGroupName);
+    const groupDir = path.join(__dirname, 'logs', safeGroupName);
 
     for (const fileExt of getPreferredLogExtensions()) {
         const logPath = path.join(groupDir, `${month}.${fileExt}`);
@@ -346,10 +346,10 @@ function getRequestedLogFilePath(groupName, fileName) {
     const safeFileName = sanitizeRoutePathPart(fileName);
 
     if (!safeFileName.endsWith('.txt') && !safeFileName.endsWith('.csv')) {
-        return path.join(__dirname, 'Logs', safeGroupName, '__invalid_log_file__');
+        return path.join(__dirname, 'logs', safeGroupName, '__invalid_log_file__');
     }
 
-    return path.join(__dirname, 'Logs', safeGroupName, safeFileName);
+    return path.join(__dirname, 'logs', safeGroupName, safeFileName);
 }
 
 function summaryLogExists(groupName, month) {
@@ -387,7 +387,7 @@ ${chatText}
 }
 
 function getSummaryOptions() {
-    const logPath = path.join(__dirname, 'Logs');
+    const logPath = path.join(__dirname, 'logs');
     if (!fs.existsSync(logPath)) {
         return { groups: [] };
     }
@@ -409,7 +409,7 @@ function getSummaryOptions() {
 }
 
 function getLogOptions() {
-    const logPath = path.join(__dirname, 'Logs');
+    const logPath = path.join(__dirname, 'logs');
     if (!fs.existsSync(logPath)) {
         return { groups: [] };
     }
@@ -490,7 +490,7 @@ async function askOllama(userText, systemPrompt, isJSONResponse, ollamaUrl) {
 }
 
 async function parseCommand(text) {
-    const logPath = path.join(__dirname, 'Logs');
+    const logPath = path.join(__dirname, 'logs');
     let groupList = [];
     if (fs.existsSync(logPath)) {
         groupList = fs.readdirSync(logPath, { withFileTypes: true }).filter(dirent => dirent.isDirectory()).map(dirent => dirent.name);
