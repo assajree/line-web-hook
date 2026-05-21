@@ -11,12 +11,9 @@
     <div id="appHeader"></div>
     <main>
         <h1>Summary Data</h1>
-        <p>เลือก group และเดือนจาก log ที่มีอยู่ แล้วส่งข้อมูลไปยัง Ollama เพื่อสรุปผล</p>
+        <p>เลือก group และเดือนจาก log ที่มีอยู่ แล้วใช้ AI จากหน้า Config เพื่อสรุปรายการแจ้งปัญหา</p>
         <section class="panel">
             <div class="grid">
-                <label>OLLAMA_URL
-                    <input id="ollamaUrl" type="url" value="http://localhost:11434/api/chat" placeholder="http://localhost:11434/api/chat">
-                </label>
                 <label>Group
                     <select id="groupSelect"></select>
                 </label>
@@ -26,7 +23,7 @@
                 <button id="summaryButton" type="button">Summary</button>
             </div>
             <div id="status" class="status"></div>
-            <textarea id="summaryOutput" placeholder="ผลลัพธ์จาก Ollama จะแสดงที่นี่"></textarea>
+            <textarea id="summaryOutput" placeholder="เลือกข้อมูลแล้วกด Summary เพื่อเริ่มสรุปรายการแจ้งปัญหา"></textarea>
         </section>
     </main>
     <script src="/js/layout.js"></script>

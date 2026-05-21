@@ -21,6 +21,7 @@ const CONFIG_FIELDS = [
     'OLLAMA_MODEL',
     'GEMINI_API_KEY',
     'GEMINI_MODEL',
+    'ASK_AI',
     'LOG_FORMAT'
 ];
 const SECRET_CONFIG_FIELDS = ['CHANNEL_SECRET', 'CHANNEL_ACCESS_TOKEN', 'GEMINI_API_KEY'];
@@ -178,7 +179,7 @@ app.get('/api/summary/options', (req, res) => {
 });
 
 app.get('/issue-summary', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'pages', 'issue-summary.html'));
+    res.redirect('/summary');
 });
 
 app.get('/api/issue-summary/options', (req, res) => {
@@ -186,6 +187,14 @@ app.get('/api/issue-summary/options', (req, res) => {
 });
 
 app.post('/api/issue-summary', async (req, res) => {
+    return handleIssueSummaryRequest(req, res);
+});
+
+app.post('/api/summary', async (req, res) => {
+    return handleIssueSummaryRequest(req, res);
+});
+
+async function handleIssueSummaryRequest(req, res) {
     try {
         const { groupName, month } = req.body || {};
 
@@ -197,37 +206,13 @@ app.post('/api/issue-summary', async (req, res) => {
             return res.status(404).json({ error: `ไม่พบข้อมูลของกลุ่ม ${groupName} เดือน ${month}` });
         }
 
-        if (!getConfig().GEMINI_API_KEY) {
-            return res.status(400).json({ error: 'กรุณาตั้งค่า GEMINI_API_KEY ในหน้า Config ก่อนใช้งาน' });
-        }
-
-        const summary = await summarizeIssuesWithGemini(groupName, month);
-        res.json({ summary });
-    } catch (ex) {
-        console.log('ISSUE SUMMARY API ERROR: ' + ex.message);
-        res.status(500).json({ error: ex.message || 'ไม่สามารถสรุปรายการแจ้งปัญหาได้ในขณะนี้' });
-    }
-});
-
-app.post('/api/summary', async (req, res) => {
-    try {
-        const { ollamaUrl, groupName, month } = req.body || {};
-
-        if (!ollamaUrl || !groupName || !month) {
-            return res.status(400).json({ error: 'กรุณาระบุ OLLAMA_URL, group และเดือนให้ครบ' });
-        }
-
-        if (!summaryLogExists(groupName, month)) {
-            return res.status(404).json({ error: `ไม่พบข้อมูลของกลุ่ม ${groupName} เดือน ${month}` });
-        }
-
-        const summary = await summarizeLog(groupName, month, ollamaUrl);
+        const summary = await summarizeIssues(groupName, month);
         res.json({ summary });
     } catch (ex) {
         console.log('SUMMARY API ERROR: ' + ex.message);
-        res.status(500).json({ error: 'ไม่สามารถสรุปข้อมูลได้ในขณะนี้' });
+        res.status(ex.statusCode || 500).json({ error: ex.message || 'ไม่สามารถสรุปรายการแจ้งปัญหาได้ในขณะนี้' });
     }
-});
+}
 
 app.get('/logs', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'pages', 'logs.html'));
@@ -248,6 +233,7 @@ app.get('/api/config', (req, res) => {
             OLLAMA_MODEL: config.OLLAMA_MODEL || '',
             GEMINI_API_KEY: maskSecret(config.GEMINI_API_KEY),
             GEMINI_MODEL: config.GEMINI_MODEL || '',
+            ASK_AI: config.ASK_AI || 'ollama',
             LOG_FORMAT: config.LOG_FORMAT || 'csv'
         }
     });
@@ -403,10 +389,30 @@ async function summarizeLog(groupName, month, ollamaUrl) {
     return askOllama("", prompt, false, ollamaUrl || defaultOllamaUrl);
 }
 
-async function summarizeIssuesWithGemini(groupName, month) {
+async function summarizeIssues(groupName, month) {
     const chatText = fs.readFileSync(getLogFilePath(groupName, month), 'utf8');
     const prompt = buildIssueSummaryPrompt(groupName, month, chatText);
-    return askGemini(prompt);
+    const { ASK_AI: askAi, OLLAMA_URL: ollamaUrl, OLLAMA_MODEL: ollamaModel } = getConfig();
+
+    if (askAi === 'gemini') {
+        return askGemini(prompt);
+    }
+
+    if (!ollamaUrl) {
+        throwConfigError('กรุณาตั้งค่า OLLAMA_URL ในหน้า Config ก่อนใช้งาน');
+    }
+
+    if (!ollamaModel) {
+        throwConfigError('กรุณาตั้งค่า OLLAMA_MODEL ในหน้า Config ก่อนใช้งาน');
+    }
+
+    return askOllama("", prompt, false);
+}
+
+function throwConfigError(message) {
+    const error = new Error(message);
+    error.statusCode = 400;
+    throw error;
 }
 
 function buildSummaryPrompt(groupName, chatText) {
@@ -560,7 +566,7 @@ async function askGemini(prompt) {
     const { GEMINI_API_KEY: geminiApiKey, GEMINI_MODEL: geminiModel } = getConfig();
 
     if (!geminiApiKey) {
-        throw new Error('กรุณาตั้งค่า GEMINI_API_KEY ในหน้า Config ก่อนใช้งาน');
+        throwConfigError('กรุณาตั้งค่า GEMINI_API_KEY ในหน้า Config ก่อนใช้งาน');
     }
 
     const model = geminiModel || 'gemini-2.5-flash';
@@ -659,6 +665,7 @@ function loadConfigFromFile() {
             config[field] = String(savedConfig[field] ?? '');
         }
         config.LOG_FORMAT = normalizeLogFormat(config.LOG_FORMAT);
+        config.ASK_AI = normalizeAskAi(config.ASK_AI);
         return config;
     } catch (ex) {
         console.log('CONFIG READ ERROR: ' + ex.message);
@@ -675,6 +682,7 @@ function getDefaultConfig() {
         OLLAMA_MODEL: 'gemma3:27b',
         GEMINI_API_KEY: '',
         GEMINI_MODEL: 'gemini-2.5-flash',
+        ASK_AI: 'ollama',
         LOG_FORMAT: 'csv'
     };
 }
@@ -711,6 +719,10 @@ function normalizeLogFormat(value) {
     return String(value || '').toLowerCase() === 'txt' ? 'txt' : 'csv';
 }
 
+function normalizeAskAi(value) {
+    return String(value || '').toLowerCase() === 'gemini' ? 'gemini' : 'ollama';
+}
+
 function maskSecret(value) {
     const text = String(value || '').trim();
     if (!text) {
@@ -736,6 +748,14 @@ function validateConfigUpdates(updates) {
         }
         updates.LOG_FORMAT = format;
     }
+
+    if (Object.prototype.hasOwnProperty.call(updates, 'ASK_AI')) {
+        const askAi = String(updates.ASK_AI || '').toLowerCase();
+        if (askAi !== 'ollama' && askAi !== 'gemini') {
+            throw new Error('ASK_AI must be "ollama" or "gemini"');
+        }
+        updates.ASK_AI = askAi;
+    }
 }
 
 function isMaskedSecret(value) {
@@ -746,6 +766,7 @@ function isMaskedSecret(value) {
 function updateConfig(updates) {
     const nextConfig = { ...configStore, ...updates };
     nextConfig.LOG_FORMAT = normalizeLogFormat(nextConfig.LOG_FORMAT);
+    nextConfig.ASK_AI = normalizeAskAi(nextConfig.ASK_AI);
     writeConfigFile(nextConfig);
     configStore = nextConfig;
 }

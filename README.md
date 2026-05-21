@@ -1,5 +1,11 @@
 # LineWebhook - บอทเก็บ Log กลุ่มและสรุปแชทด้วย AI
 
+## Summary AI selection
+หน้า **Summary** ใช้สำหรับสรุปรายการแจ้งปัญหาเท่านั้น และจะใช้ AI ตามค่า **ASK_AI** ในหน้า Config:
+* `ollama` ใช้ **OLLAMA_URL** และ **OLLAMA_MODEL** จากหน้า Config
+* `gemini` ใช้ **GEMINI_API_KEY** และ **GEMINI_MODEL** จากหน้า Config
+* หน้า Summary ไม่มีช่องให้กรอก **OLLAMA_URL** เพิ่มแล้ว
+
 โปรเจกต์นี้เป็น Node JS แอปพลิเคชันที่ทำหน้าที่เก็บ Chat log จาก **LINE Bot** และสามารถใช้ AI ช่วยสรุปเนื้อหาบทสนทนากลับมาเป็นข้อๆ ได้
 
 ## ฟีเจอร์หลัก
@@ -45,15 +51,15 @@
 * **ADMIN_USER_ID:** ใส่ User ID ของ Line ที่จะสามรถสั่งบอทให้สรุปแชทได้ (User ID ของเจ้าของ Line Bot หาได้จาก *Your user ID* ในเท็บ *Basic settings* ของ LINE Developers)
 * **OllamaUrl:** แก้ที่อยู่ url ให้ตรงกับ Ollama API เช่น `http://localhost:11434/api/chat`)
 * **OllamaModel:** ระบุชื่อโมเดลที่ต้องการใช้ (ค่าเริ่มต้นคือ `gemma3:27b`)
-* **GeminiApiKey:** ใส่ API key จาก Google AI Studio เพื่อใช้หน้า Issue Summary เรียก Gemini
+* **GeminiApiKey:** ใส่ API key จาก Google AI Studio เพื่อใช้หน้า Summary เมื่อเลือก ASK_AI เป็น `gemini`
 * **GeminiModel:** ระบุชื่อโมเดล Gemini ที่ต้องการใช้ (ค่าเริ่มต้นคือ `gemini-2.5-flash`)
 
-### การตั้งค่า Gemini สำหรับ Issue Summary
+### การตั้งค่า Gemini สำหรับ Summary
 1. ไปที่ [Google AI Studio](https://aistudio.google.com/app/apikey) แล้วสร้าง API key สำหรับ Gemini
 2. เปิดหน้า [Webhook Config](https://line-web-hook-9h5l.onrender.com/config) ใน public site ที่ deploy ไว้
 3. ใส่ค่า **GEMINI_API_KEY** และตรวจสอบค่า **GEMINI_MODEL** เช่น `gemini-2.5-flash`
 4. กด **Save Config**
-5. เปิดหน้า **Issue Summary** แล้วเลือก group และเดือน ระบบจะใช้ Gemini สรุปรายการแจ้งปัญหาเป็นตาราง โดยแสดงวันที่แจ้ง ผู้แจ้ง และหัวข้อการแจ้งปัญหา
+5. ตั้งค่า **ASK_AI** เป็น `gemini` แล้วเปิดหน้า **Summary** เพื่อเลือก group และเดือน ระบบจะใช้ Gemini สรุปรายการแจ้งปัญหา
 
 ###  4. เชื่อมต่อ Webhook ใน LINE Developers
 * ไปที่ [LINE Developers Console](https://developers.line.biz/) -> เลือก Channel ของคุณ -> แถบ **Messaging API**

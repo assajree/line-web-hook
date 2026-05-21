@@ -12,6 +12,7 @@ const fields = {
     OLLAMA_MODEL: document.getElementById('ollamaModel'),
     GEMINI_API_KEY: document.getElementById('geminiApiKey'),
     GEMINI_MODEL: document.getElementById('geminiModel'),
+    ASK_AI: document.getElementById('askAi'),
     LOG_FORMAT: document.getElementById('logFormat')
 };
 
@@ -49,6 +50,7 @@ async function saveConfig(event) {
             OLLAMA_MODEL: fields.OLLAMA_MODEL.value.trim(),
             GEMINI_API_KEY: fields.GEMINI_API_KEY.value.trim(),
             GEMINI_MODEL: fields.GEMINI_MODEL.value.trim(),
+            ASK_AI: fields.ASK_AI.value.trim(),
             LOG_FORMAT: fields.LOG_FORMAT.value.trim()
         };
 
@@ -75,6 +77,7 @@ function fillForm(values) {
     fields.OLLAMA_MODEL.value = values.OLLAMA_MODEL || '';
     fields.GEMINI_API_KEY.value = values.GEMINI_API_KEY || '';
     fields.GEMINI_MODEL.value = values.GEMINI_MODEL || '';
+    fields.ASK_AI.value = values.ASK_AI || 'ollama';
     fields.LOG_FORMAT.value = values.LOG_FORMAT || 'csv';
 
     for (const fieldName of secretFieldNames) {
